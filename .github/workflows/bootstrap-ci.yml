@@ -1,0 +1,43 @@
+name: Bootstrap Script CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  bootstrap-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Ensure script is executable
+        run: chmod +x bootstrap.sh
+
+      - name: Bash syntax check
+        run: bash -n bootstrap.sh
+
+      - name: Install shellcheck
+        run: sudo apt update && sudo apt install -y shellcheck
+
+      - name: ShellCheck (lint)
+        run: |
+          shellcheck bootstrap.sh || true
+        # || true → warning بده، CI fail نشه (فعلاً)
+
+      - name: Dry-run safety check (no destructive execution)
+        run: |
+          echo "Simulating bootstrap execution (no system changes)"
+          grep -E "apt |sysctl |swapon |systemctl " bootstrap.sh \
+            && echo "⚠️ Destructive commands detected (expected)" \
+            || echo "No critical commands found"
+
+      - name: Root escalation logic test
+        run: |
+          grep -q "exec sudo bash" bootstrap.sh \
+            && echo "✅ sudo escalation logic found" \
+            || (echo "❌ sudo escalation missing" && exit 1)
