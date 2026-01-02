@@ -47,10 +47,10 @@ echo " Server Bootstrap Started"
 echo "=================================================="
 
 # --------------------------------------------------
-# OS validation
+# OS validation (Ubuntu & Debian)
 # --------------------------------------------------
-if ! grep -qi ubuntu /etc/os-release; then
-  echo "ERROR: This script supports Ubuntu only."
+if ! grep -Eqi '^(ID=(ubuntu|debian)|ID_LIKE=.*(debian|ubuntu))' /etc/os-release; then
+  echo "ERROR: This script supports Debian-based systems only (Ubuntu / Debian)."
   exit 1
 fi
 
