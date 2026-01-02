@@ -109,15 +109,17 @@ apt install -y \
   sudo \
   curl \
   wget \
+  git \
   ca-certificates \
   gnupg \
   lsb-release \
-  dialog \
-  unzip \
   htop \
+  zip \
+  unzip \
   net-tools \
-  bash-completion \
-  software-properties-common
+  openssl \
+  build-essential \
+  bash-completion
 
 # --------------------------------------------------
 # Swap creation (safe & adaptive)
