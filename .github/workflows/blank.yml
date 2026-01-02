@@ -16,7 +16,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Ensure script is executable
-        run: chmod +x core/bootstrap.sh
+        run: chmod +x bootstrap.sh
 
       - name: Bash syntax check
         run: bash -n core/bootstrap.sh
