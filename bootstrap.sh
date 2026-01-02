@@ -32,6 +32,13 @@ if [[ "$EUID" -ne 0 ]]; then
 fi
 
 # --------------------------------------------------
+# Helper: systemd detection
+# --------------------------------------------------
+has_systemd() {
+  [[ -d /run/systemd/system ]] && command -v systemctl >/dev/null 2>&1
+}
+
+# --------------------------------------------------
 # Logging (lightweight & optional)
 # --------------------------------------------------
 LOG="/var/log/server-bootstrap.log"
@@ -55,31 +62,36 @@ if ! grep -Eqi '^(ID=(ubuntu|debian)|ID_LIKE=.*(debian|ubuntu))' /etc/os-release
 fi
 
 # --------------------------------------------------
-# Timezone & Locale
+# Timezone & Locale (optional, UTC recommended)
 # --------------------------------------------------
-echo "[*] Timezone configuration"
+echo "[*] Timezone & locale configuration"
 echo "    Recommendation: UTC (best for logs & servers)"
 
-read -rp "Set timezone to UTC? [Y/n]: " TZ_CHOICE
-TZ_CHOICE=${TZ_CHOICE:-Y}
+read -rp "Configure timezone and locale now? [y/N]: " TZ_CONFIRM
+if [[ "$TZ_CONFIRM" =~ ^[Yy]$ ]]; then
 
-if [[ "$TZ_CHOICE" =~ ^[Yy]$ ]]; then
-  if has_systemd; then
-    timedatectl set-timezone UTC
-    echo "[+] Timezone set to UTC"
-  else
-    echo "[!] systemd not available, skipping timezone"
-  fi
-else
-  read -rp "Enter custom timezone (e.g. Asia/Tehran): " TZ
-  if [[ -n "$TZ" && has_systemd ]]; then
-    timedatectl set-timezone "$TZ"
-    echo "[+] Timezone set to $TZ"
-  else
-    echo "[*] Timezone unchanged"
-  fi
-fi
+  # ---- Timezone ----
+  read -rp "Set timezone to UTC? [Y/n]: " TZ_CHOICE
+  TZ_CHOICE=${TZ_CHOICE:-Y}
 
+  if [[ "$TZ_CHOICE" =~ ^[Yy]$ ]]; then
+    if has_systemd; then
+      timedatectl set-timezone UTC
+      echo "[+] Timezone set to UTC"
+    else
+      echo "[!] systemd not available, skipping timezone"
+    fi
+  else
+    read -rp "Enter custom timezone (e.g. Asia/Tehran): " TZ
+    if [[ -n "$TZ" && has_systemd ]]; then
+      timedatectl set-timezone "$TZ"
+      echo "[+] Timezone set to $TZ"
+    else
+      echo "[*] Timezone unchanged"
+    fi
+  fi
+
+  # ---- Locale ----
   read -rp "Enter locale (e.g. en_US.UTF-8, fa_IR.UTF-8) [skip]: " LOCALE
   if [[ -n "$LOCALE" ]]; then
     locale-gen "$LOCALE"
@@ -88,6 +100,7 @@ fi
   else
     echo "[*] Locale skipped"
   fi
+
 else
   echo "[*] Timezone & locale left unchanged"
 fi
@@ -173,7 +186,11 @@ SystemMaxUse=200M
 RuntimeMaxUse=100M
 EOF
 
-systemctl restart systemd-journald
+if has_systemd; then
+  systemctl restart systemd-journald
+else
+  echo "[!] systemd not available, skipping journald restart"
+fi
 
 # --------------------------------------------------
 # Optional: automatic security updates
