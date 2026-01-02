@@ -57,10 +57,40 @@ fi
 # --------------------------------------------------
 # Timezone & Locale
 # --------------------------------------------------
-echo "[*] Configuring timezone & locale..."
-timedatectl set-timezone UTC
-locale-gen en_US.UTF-8
-update-locale LANG=en_US.UTF-8
+echo "[*] Timezone configuration"
+echo "    Recommendation: UTC (best for logs & servers)"
+
+read -rp "Set timezone to UTC? [Y/n]: " TZ_CHOICE
+TZ_CHOICE=${TZ_CHOICE:-Y}
+
+if [[ "$TZ_CHOICE" =~ ^[Yy]$ ]]; then
+  if has_systemd; then
+    timedatectl set-timezone UTC
+    echo "[+] Timezone set to UTC"
+  else
+    echo "[!] systemd not available, skipping timezone"
+  fi
+else
+  read -rp "Enter custom timezone (e.g. Asia/Tehran): " TZ
+  if [[ -n "$TZ" && has_systemd ]]; then
+    timedatectl set-timezone "$TZ"
+    echo "[+] Timezone set to $TZ"
+  else
+    echo "[*] Timezone unchanged"
+  fi
+fi
+
+  read -rp "Enter locale (e.g. en_US.UTF-8, fa_IR.UTF-8) [skip]: " LOCALE
+  if [[ -n "$LOCALE" ]]; then
+    locale-gen "$LOCALE"
+    update-locale LANG="$LOCALE"
+    echo "[+] Locale set to $LOCALE"
+  else
+    echo "[*] Locale skipped"
+  fi
+else
+  echo "[*] Timezone & locale left unchanged"
+fi
 
 # --------------------------------------------------
 # Base system update
