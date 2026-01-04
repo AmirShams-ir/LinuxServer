@@ -160,6 +160,7 @@ if sysctl net.ipv4.tcp_available_congestion_control 2>/dev/null | grep -qw bbr; 
   cat <<EOF >/etc/sysctl.d/99-bbr.conf
 net.core.default_qdisc=fq
 net.ipv4.tcp_congestion_control=bbr
+modprobe tcp_bbr
 EOF
   sysctl --system >/dev/null
   STATUS_BBR=true
