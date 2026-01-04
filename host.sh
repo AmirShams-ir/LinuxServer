@@ -201,11 +201,12 @@ apt autoclean -y
 # FINAL REPORT
 # ==================================================
 echo
-echo -e "\e[36m══════════════════════════════════════════════\e[0m"
-echo -e " ✔ Hostname : $FQDN"
-echo -e " ✔ DNS      : OK"
-echo -e " ✔ SSL      : Issued"
-echo -e " ✔ Web      : OpenLiteSpeed"
-echo -e " ✔ Firewall : UFW + Fail2Ban"
-echo -e "\e[36m══════════════════════════════════════════════\e[0m"
+echo -e "\e[1;36m══════════════════════════════════════════════\e[0m"
+echo -e "\e[1;32m ✔ Hostname : $FQDN\e[0m"
+echo -e "\e[1;32m ✔ DNS      : OK\e[0m"
+echo -e "\e[1;32m ✔ SSL      : Issued\e[0m"
+echo -e "\e[1;32m ✔ Web      : OpenLiteSpeed\e[0m"
+echo -e "\e[1;32m ✔ Firewall : UFW + Fail2Ban\e[0m"
+echo -e "\e[1;36m══════════════════════════════════════════════\e[0m"
+
 echo
