@@ -156,11 +156,11 @@ STATUS_SYSCTL=true
 # TCP BBR
 # --------------------------------------------------
 echo "[*] Configuring TCP BBR..."
+modprobe tcp_bbr
 if sysctl net.ipv4.tcp_available_congestion_control 2>/dev/null | grep -qw bbr; then
   cat <<EOF >/etc/sysctl.d/99-bbr.conf
 net.core.default_qdisc=fq
 net.ipv4.tcp_congestion_control=bbr
-modprobe tcp_bbr
 EOF
   sysctl --system >/dev/null
   STATUS_BBR=true
@@ -206,10 +206,10 @@ report "Automatic security updates"    "$STATUS_AUTOUPDATE"
 report "TCP BBR congestion control"    "$STATUS_BBR"
 
 echo
-echo -e "\e[36m══════════════════════════════════════════════════\e[0m"
-echo -e " \e[32m✔ Bootstrap completed successfully\e[0m"
-echo -e " \e[32m✔ System is clean, updated & production-ready\e[0m"
-echo -e "\e[36m══════════════════════════════════════════════════\e[0m"
+echo -e "\e[1;36m══════════════════════════════════════════════════\e[0m"
+echo -e " \e[1;32m✔ Bootstrap completed successfully\e[0m"
+echo -e " \e[1;32m✔ System is clean, updated & production-ready\e[0m"
+echo -e "\e[1;36m══════════════════════════════════════════════════\e[0m"
 echo
 
 # --------------------------------------------------
