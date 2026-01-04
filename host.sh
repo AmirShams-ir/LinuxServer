@@ -1,55 +1,40 @@
 #!/usr/bin/env bash
 # -----------------------------------------------------------------------------
-# Description: This script performs mandatory base initialization on a fresh
-#              Linux VPS. It prepares the system with safe defaults, essential
-#              tools, and baseline optimizations before any role-specific
-#              configuration (hosting, security, WordPress, etc.).
-#
+# Mandatory base initialization for fresh Debian/Ubuntu VPS
 # Author: Amir Shams
-# GitHub: https://github.com/AmirShams-ir/LinuxServer
-#
-# Disclaimer: This script is provided for educational and informational
-#             purposes only. Use it responsibly and in compliance with all
-#             applicable laws and regulations.
-#
-# Note: This script is designed to be SAFE, IDEMPOTENT, and NON-DESTRUCTIVE.
-#       Review before use. No application-level services are installed here.
-# -----------------------------------------------------------------------------
-#!/usr/bin/env bash
-# -----------------------------------------------------------------------------
-# Description: Mandatory base initialization for fresh Debian/Ubuntu VPS
-# Author: BabyBoss
 # GitHub: https://github.com/AmirShams-ir/LinuxServer
 # -----------------------------------------------------------------------------
 
 set -e
 
 # ==================================================
-# CONFIGS
+# GLOBAL CONFIG (STATIC)
 # ==================================================
 TIMEZONE="UTC"
 SSH_PORT=22
 OLS_ADMIN_PORT=7080
+
 DNS_PRIMARY="1.1.1.1"
 DNS_SECONDARY="8.8.8.8"
 DNS_TERTIARY="9.9.9.9"
 
-read -rp "Enter hostname (e.g. vps): " HOSTNAME
-read -rp "Enter domain name (e.g. example.com): " DOMAIN
-read -rp "Enter admin email (for SSL & alerts): " ADMIN_EMAIL
-
-FQDN="${HOSTNAME}.${DOMAIN}"
-# ==================================================
-
 export DEBIAN_FRONTEND=noninteractive
 
-log() {
-  echo -e "\e[32m[✔] $1\e[0m"
-}
+# ==================================================
+# INTERACTIVE CONFIG
+# ==================================================
+read -rp "Enter hostname (e.g. vps): " HOSTNAME
+read -rp "Enter domain name (e.g. example.com): " DOMAIN
+read -rp "Enter admin email (SSL & alerts): " ADMIN_EMAIL
 
-warn() {
-  echo -e "\e[33m[!] $1\e[0m"
-}
+FQDN="${HOSTNAME}.${DOMAIN}"
+
+# ==================================================
+# HELPERS
+# ==================================================
+log()  { echo -e "\e[32m[✔] $1\e[0m"; }
+warn() { echo -e "\e[33m[!] $1\e[0m"; }
+die()  { echo -e "\e[31m[✖] $1\e[0m"; exit 1; }
 
 # ==================================================
 # BASIC SYSTEM
@@ -61,20 +46,19 @@ grep -q "$FQDN" /etc/hosts || echo "127.0.1.1 $FQDN $HOSTNAME" >> /etc/hosts
 log "Setting timezone"
 timedatectl set-timezone "$TIMEZONE" || true
 
-log "System update"
+log "Updating system"
 apt update && apt -y upgrade
 
 apt install -y \
   curl wget unzip git sudo \
   ca-certificates gnupg lsb-release \
   ufw fail2ban software-properties-common \
-  htop ncdu rsyslog \
-  dnsutils
+  htop ncdu rsyslog dnsutils
 
 # ==================================================
-# DNS CONFIG (AUTO-DETECT)
+# DNS RESOLVER CONFIG (SERVER SIDE)
 # ==================================================
-log "Configuring DNS"
+log "Configuring system DNS resolver"
 
 if systemctl list-unit-files | grep -q systemd-resolved; then
   cat > /etc/systemd/resolved.conf <<EOF
@@ -95,9 +79,30 @@ EOF
 fi
 
 # ==================================================
-# FIREWALL (UFW)
+# DNS / NS VERIFICATION (DOMAIN SIDE)
 # ==================================================
-log "Configuring UFW"
+log "Checking DNS A record for $FQDN"
+
+SERVER_IP=$(curl -s https://api.ipify.org)
+DNS_IP=$(dig +short "$FQDN" A | tail -n1)
+
+if [[ "$SERVER_IP" != "$DNS_IP" ]]; then
+  warn "DNS A record is NOT correct"
+  echo " Expected IP : $SERVER_IP"
+  echo " DNS IP      : ${DNS_IP:-NOT FOUND}"
+  echo
+  echo "👉 Please set this DNS record at your DNS provider:"
+  echo "   $FQDN  -->  $SERVER_IP"
+  echo
+  die "Fix DNS first, then re-run the script"
+fi
+
+log "DNS A record is valid"
+
+# ==================================================
+# FIREWALL
+# ==================================================
+log "Configuring UFW firewall"
 ufw --force reset
 ufw default deny incoming
 ufw default allow outgoing
@@ -120,28 +125,20 @@ maxretry = 4
 [sshd]
 enabled = true
 port = ${SSH_PORT}
-
-[litespeed]
-enabled = true
-port = http,https
-logpath = /usr/local/lsws/logs/error.log
-maxretry = 6
 EOF
 
 systemctl enable --now fail2ban
 
 # ==================================================
-# ANTI-DDOS / KERNEL HARDENING
+# KERNEL HARDENING
 # ==================================================
 log "Applying kernel hardening"
 cat > /etc/sysctl.d/99-hardening.conf <<EOF
 net.ipv4.tcp_syncookies = 1
 net.ipv4.conf.all.accept_redirects = 0
-net.ipv4.conf.default.accept_redirects = 0
 net.ipv4.conf.all.send_redirects = 0
 net.ipv4.icmp_echo_ignore_broadcasts = 1
 net.ipv4.conf.all.rp_filter = 1
-net.ipv4.tcp_max_syn_backlog = 4096
 net.ipv4.tcp_fin_timeout = 15
 net.core.somaxconn = 4096
 EOF
@@ -155,20 +152,30 @@ log "Installing OpenLiteSpeed"
 wget -qO- https://repo.litespeed.sh | bash
 apt install -y openlitespeed \
   lsphp82 lsphp82-common lsphp82-curl \
-  lsphp82-intl lsphp82-mysql \
-  lsphp82-opcache 
+  lsphp82-intl lsphp82-mysql lsphp82-opcache
 
 systemctl enable lsws
+systemctl start lsws
 
 # ==================================================
-# CERTBOT
+# SSL (LETSENCRYPT)
 # ==================================================
 log "Installing Certbot"
 apt install -y certbot
-warn "SSL issuance requires correct DNS A record"
+
+log "Issuing SSL certificate for $FQDN"
+certbot certonly \
+  --standalone \
+  --preferred-challenges http \
+  --agree-tos \
+  --non-interactive \
+  -m "$ADMIN_EMAIL" \
+  -d "$FQDN"
+
+log "SSL certificate issued successfully"
 
 # ==================================================
-# WP-CLI
+# WP-CLI (for next scripts)
 # ==================================================
 log "Installing WP-CLI"
 curl -sO https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
@@ -176,9 +183,9 @@ chmod +x wp-cli.phar
 mv wp-cli.phar /usr/local/bin/wp
 
 # ==================================================
-# SERVER MONITORING (NETDATA)
+# MONITORING
 # ==================================================
-log "Installing Netdata (Debian repo)"
+log "Installing Netdata"
 apt install -y netdata
 systemctl enable netdata
 systemctl start netdata
@@ -195,15 +202,10 @@ apt autoclean -y
 # ==================================================
 echo
 echo -e "\e[36m══════════════════════════════════════════════\e[0m"
-echo -e " \e[32m✔ Hosting bootstrap completed successfully\e[0m"
-echo -e " \e[32m✔ Hostname : $FQDN\e[0m"
-echo -e " \e[32m✔ Firewall : UFW + Fail2Ban\e[0m"
-echo -e " \e[32m✔ Web      : OpenLiteSpeed\e[0m"
-echo -e " \e[32m✔ Monitor  : Netdata\e[0m"
+echo -e " ✔ Hostname : $FQDN"
+echo -e " ✔ DNS      : OK"
+echo -e " ✔ SSL      : Issued"
+echo -e " ✔ Web      : OpenLiteSpeed"
+echo -e " ✔ Firewall : UFW + Fail2Ban"
 echo -e "\e[36m══════════════════════════════════════════════\e[0m"
 echo
-
-# --------------------------------------------------
-# Cleanup (safe mode)
-# --------------------------------------------------
-unset LOG
