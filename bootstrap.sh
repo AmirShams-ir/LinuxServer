@@ -5,7 +5,7 @@
 #              tools, and baseline optimizations before any role-specific
 #              configuration (hosting, security, WordPress, etc.).
 #
-# Author: BabyBoss
+# Author: Amir Shams
 # GitHub: https://github.com/AmirShams-ir/LinuxServer
 #
 # Disclaimer: This script is provided for educational and informational
@@ -39,7 +39,7 @@ has_systemd() {
 }
 
 # --------------------------------------------------
-# Logging (lightweight & optional)
+# Logging
 # --------------------------------------------------
 LOG="/var/log/server-bootstrap.log"
 if touch "$LOG" &>/dev/null; then
@@ -54,55 +54,42 @@ echo " Server Bootstrap Started"
 echo "=================================================="
 
 # --------------------------------------------------
-# OS validation (Ubuntu & Debian)
+# OS validation (Debian / Ubuntu)
 # --------------------------------------------------
 if ! grep -Eqi '^(ID=(ubuntu|debian)|ID_LIKE=.*(debian|ubuntu))' /etc/os-release; then
-  echo "ERROR: This script supports Debian-based systems only (Ubuntu / Debian)."
+  echo "ERROR: This script supports Debian-based systems only."
   exit 1
 fi
 
 # --------------------------------------------------
-# Timezone & Locale (optional)
+# Timezone & Locale (FORCED)
 # --------------------------------------------------
-echo "[*] Timezone & locale configuration"
-echo "    Recommendation: UTC (best for logs & servers)"
+echo "[*] Configuring timezone and locale (UTC / en_US.UTF-8)"
 
-read -rp "Configure timezone and locale now? [y/N]: " TZ_CONFIRM
-if [[ "$TZ_CONFIRM" =~ ^[Yy]$ ]]; then
-
-  # ---- Timezone ----
-  read -rp "Set timezone to UTC? [Y/n]: " TZ_CHOICE
-  TZ_CHOICE=${TZ_CHOICE:-Y}
-
-  if [[ "$TZ_CHOICE" =~ ^[Yy]$ ]]; then
-    if has_systemd; then
-      timedatectl set-timezone UTC
-      echo "[+] Timezone set to UTC"
-    else
-      echo "[!] systemd not available, skipping timezone"
-    fi
+if has_systemd; then
+  CURRENT_TZ="$(timedatectl show -p Timezone --value 2>/dev/null || true)"
+  if [[ "$CURRENT_TZ" != "UTC" ]]; then
+    timedatectl set-timezone UTC
+    echo "[+] Timezone set to UTC"
   else
-    read -rp "Enter custom timezone (e.g. Asia/Tehran): " TZ
-    if [[ -n "$TZ" && has_systemd ]]; then
-      timedatectl set-timezone "$TZ"
-      echo "[+] Timezone set to $TZ"
-    else
-      echo "[*] Timezone unchanged"
-    fi
+    echo "[*] Timezone already UTC"
   fi
-
-  read -rp "Enter locale (e.g. en_US.UTF-8, fa_IR.UTF-8) [skip]: " LOCALE
-  if [[ -n "$LOCALE" ]]; then
-    locale-gen "$LOCALE"
-    update-locale LANG="$LOCALE"
-    echo "[+] Locale set to $LOCALE"
-  else
-    echo "[*] Locale skipped"
-  fi
-
 else
-  echo "[*] Timezone & locale left unchanged"
+  echo "[!] systemd not available, skipping timezone"
 fi
+
+LOCALE="en_US.UTF-8"
+if ! locale -a | grep -qx "$LOCALE"; then
+  echo "[*] Generating locale $LOCALE"
+  sed -i 's/^# *\(en_US.UTF-8 UTF-8\)/\1/' /etc/locale.gen
+  locale-gen "$LOCALE"
+else
+  echo "[*] Locale $LOCALE already exists"
+fi
+
+update-locale LANG="$LOCALE" LC_ALL="$LOCALE"
+export LANG="$LOCALE"
+export LC_ALL="$LOCALE"
 
 # --------------------------------------------------
 # Base system update
@@ -114,7 +101,7 @@ apt autoremove -y
 apt autoclean -y
 
 # --------------------------------------------------
-# Essential packages (minimal & universal)
+# Essential packages
 # --------------------------------------------------
 echo "[*] Installing essential packages..."
 apt install -y \
@@ -131,14 +118,21 @@ apt install -y \
   net-tools \
   openssl \
   build-essential \
-  bash-completion
+  bash-completion \
+  unattended-upgrades
 
 # --------------------------------------------------
-# Swap creation (safe & adaptive)
+# Automatic security updates (FORCED)
+# --------------------------------------------------
+echo "[*] Enabling unattended security upgrades..."
+dpkg-reconfigure -f noninteractive unattended-upgrades
+
+# --------------------------------------------------
+# Swap creation (adaptive)
 # --------------------------------------------------
 echo "[*] Checking swap..."
 if ! swapon --show | grep -q swap; then
-  RAM_MB=$(free -m | awk '/Mem:/ {print $2}')
+  RAM_MB="$(free -m | awk '/Mem:/ {print $2}')"
 
   if [[ "$RAM_MB" -lt 2048 ]]; then
     SWAP_SIZE="2G"
@@ -146,21 +140,20 @@ if ! swapon --show | grep -q swap; then
     SWAP_SIZE="1G"
   fi
 
-  echo "[*] Creating swap file ($SWAP_SIZE)..."
+  echo "[*] Creating swap ($SWAP_SIZE)..."
   fallocate -l "$SWAP_SIZE" /swapfile
   chmod 600 /swapfile
   mkswap /swapfile
   swapon /swapfile
 
-  if ! grep -q "/swapfile" /etc/fstab; then
+  grep -q "/swapfile" /etc/fstab || \
     echo "/swapfile none swap sw 0 0" >> /etc/fstab
-  fi
 else
-  echo "[*] Swap already exists. Skipping."
+  echo "[*] Swap already exists"
 fi
 
 # --------------------------------------------------
-# Safe sysctl baseline (non-aggressive)
+# Sysctl baseline
 # --------------------------------------------------
 echo "[*] Applying sysctl baseline..."
 cat <<EOF >/etc/sysctl.d/99-bootstrap.conf
@@ -174,7 +167,7 @@ EOF
 sysctl --system
 
 # --------------------------------------------------
-# Journald log limits
+# Journald limits
 # --------------------------------------------------
 echo "[*] Limiting journald disk usage..."
 mkdir -p /etc/systemd/journald.conf.d
@@ -187,26 +180,21 @@ EOF
 
 if has_systemd; then
   systemctl restart systemd-journald
-else
-  echo "[!] systemd not available, skipping journald restart"
 fi
 
 # --------------------------------------------------
-# Optional: automatic security updates
+# Cleanup (FULL – paranoia mode 😄)
 # --------------------------------------------------
-read -rp "Enable automatic security updates (unattended-upgrades)? [y/N]: " AUTO
-if [[ "$AUTO" =~ ^[Yy]$ ]]; then
-  echo "[*] Enabling unattended-upgrades..."
-  apt install -y unattended-upgrades
-  dpkg-reconfigure -f noninteractive unattended-upgrades
-else
-  echo "[*] Automatic updates skipped."
-fi
+unset LOG
+unset CURRENT_TZ
+unset LOCALE
+unset RAM_MB
+unset SWAP_SIZE
 
 # --------------------------------------------------
 # Done
 # --------------------------------------------------
 echo "=================================================="
 echo " Bootstrap completed successfully"
-echo " You can now run any One-click profile"
+echo " System is clean, predictable, and production-ready"
 echo "=================================================="
