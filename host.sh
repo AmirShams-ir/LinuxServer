@@ -14,7 +14,41 @@
 #       Review before use. No application-level services are installed here.
 # -----------------------------------------------------------------------------
 
-set -e
+set -euo pipefail
+
+# --------------------------------------------------
+# Logging
+# --------------------------------------------------
+LOG="/var/log/server-hosting.log"
+if touch "$LOG" &>/dev/null; then
+  exec > >(tee -a "$LOG") 2>&1
+  echo "[*] Logging enabled: $LOG"
+fi
+
+echo -e "\e[1;33m══════════════════════════════════════════════════\e[0m"
+echo -e " \e[1;33m✔ Hosting Script Started\e[0m"
+echo -e "\e[1;33m══════════════════════════════════════════════════\e[0m"
+
+# --------------------------------------------------
+# Root / sudo handling
+# --------------------------------------------------
+if [[ "$EUID" -ne 0 ]]; then
+  if command -v sudo >/dev/null 2>&1; then
+    echo "Re-running script with sudo..."
+    exec sudo bash "$0" "$@"
+  else
+    echo "Error: Root privileges required."
+    exit 1
+  fi
+fi
+
+# --------------------------------------------------
+# OS validation
+# --------------------------------------------------
+if ! grep -Eqi '^(ID=(ubuntu|debian)|ID_LIKE=.*(debian|ubuntu))' /etc/os-release; then
+  echo "ERROR: Debian/Ubuntu only."
+  exit 1
+fi
 
 # ==================================================
 # GLOBAL CONFIG (STATIC)
@@ -23,6 +57,7 @@ TIMEZONE="UTC"
 SSH_PORT=22
 OLS_ADMIN_PORT=7080
 NETDATA_PORT=19999
+
 DNS_PRIMARY="1.1.1.1"
 DNS_SECONDARY="8.8.8.8"
 DNS_TERTIARY="9.9.9.9"
@@ -35,6 +70,11 @@ export DEBIAN_FRONTEND=noninteractive
 read -rp "Enter hostname (e.g. vps): " HOSTNAME
 read -rp "Enter domain name (e.g. example.com): " DOMAIN
 read -rp "Enter admin email (SSL & alerts): " ADMIN_EMAIL
+
+[[ -z "$HOSTNAME" || -z "$DOMAIN" || -z "$ADMIN_EMAIL" ]] && {
+  echo "ERROR: Hostname, domain and email must not be empty."
+  exit 1
+}
 
 FQDN="${HOSTNAME}.${DOMAIN}"
 
@@ -88,7 +128,7 @@ EOF
 fi
 
 # ==================================================
-# DNS / NS VERIFICATION (DOMAIN SIDE)
+# DNS A RECORD VERIFICATION
 # ==================================================
 log "Checking DNS A record for $FQDN"
 
@@ -100,9 +140,8 @@ if [[ "$SERVER_IP" != "$DNS_IP" ]]; then
   echo " Expected IP : $SERVER_IP"
   echo " DNS IP      : ${DNS_IP:-NOT FOUND}"
   echo
-  echo "👉 Please set this DNS record at your DNS provider:"
+  echo "👉 Please set this DNS record:"
   echo "   $FQDN  -->  $SERVER_IP"
-  echo
   die "Fix DNS first, then re-run the script"
 fi
 
@@ -117,11 +156,11 @@ ufw --force reset
 ufw default deny incoming
 ufw default allow outgoing
 
-ufw allow ${SSH_PORT}/tcp      # SSH
-ufw allow 80/tcp               # HTTP
-ufw allow 443/tcp              # HTTPS
-ufw allow ${OLS_ADMIN_PORT}/tcp # OpenLiteSpeed Admin
-ufw allow ${NETDATA_PORT}/tcp  # Netdata
+ufw allow ${SSH_PORT}/tcp        # SSH
+ufw allow 80/tcp                 # HTTP
+ufw allow 443/tcp                # HTTPS
+ufw allow ${OLS_ADMIN_PORT}/tcp  # OpenLiteSpeed Admin
+ufw allow ${NETDATA_PORT}/tcp    # Netdata (restrict in production if needed)
 
 ufw --force enable
 
@@ -129,6 +168,7 @@ ufw --force enable
 # FAIL2BAN
 # ==================================================
 log "Configuring Fail2Ban"
+
 cat > /etc/fail2ban/jail.local <<EOF
 [DEFAULT]
 bantime = 1h
@@ -146,6 +186,7 @@ systemctl enable --now fail2ban
 # KERNEL HARDENING
 # ==================================================
 log "Applying kernel hardening"
+
 cat > /etc/sysctl.d/99-hardening.conf <<EOF
 net.ipv4.tcp_syncookies = 1
 net.ipv4.conf.all.accept_redirects = 0
@@ -162,13 +203,13 @@ sysctl --system
 # OPENLITESPEED + PHP
 # ==================================================
 log "Installing OpenLiteSpeed"
+
 wget -qO- https://repo.litespeed.sh | bash
 apt install -y openlitespeed \
   lsphp82 lsphp82-common lsphp82-curl \
   lsphp82-intl lsphp82-mysql lsphp82-opcache
 
 systemctl enable lsws
-systemctl start lsws
 
 # ==================================================
 # SSL (LETSENCRYPT)
@@ -177,6 +218,8 @@ log "Installing Certbot"
 apt install -y certbot
 
 log "Issuing SSL certificate for $FQDN"
+systemctl stop lsws || true
+
 certbot certonly \
   --standalone \
   --preferred-challenges http \
@@ -184,6 +227,8 @@ certbot certonly \
   --non-interactive \
   -m "$ADMIN_EMAIL" \
   -d "$FQDN"
+
+systemctl start lsws
 
 log "SSL certificate issued successfully"
 
@@ -224,19 +269,9 @@ echo -e "\e[1;36m═════════════════════
 echo
 
 # ==================================================
-# CLEAN EXIT
+# CLEAN EXIT (OCD MODE)
 # ==================================================
-unset TIMEZONE
-unset SSH_PORT
-unset OLS_ADMIN_PORT
-unset NETDATA_PORT
-unset DNS_PRIMARY
-unset DNS_SECONDARY
-unset DNS_TERTIARY
-unset HOSTNAME
-unset DOMAIN
-unset FQDN
-unset ADMIN_EMAIL
-unset SERVER_IP
-unset DNS_IP
-unset DEBIAN_FRONTEND
+unset TIMEZONE SSH_PORT OLS_ADMIN_PORT NETDATA_PORT
+unset DNS_PRIMARY DNS_SECONDARY DNS_TERTIARY
+unset HOSTNAME DOMAIN FQDN ADMIN_EMAIL
+unset SERVER_IP DNS_IP DEBIAN_FRONTEND
