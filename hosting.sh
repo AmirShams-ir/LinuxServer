@@ -1,4 +1,27 @@
 #!/usr/bin/env bash
+# -----------------------------------------------------------------------------
+# Description: This script performs mandatory base initialization on a fresh
+#              Linux VPS. It prepares the system with safe defaults, essential
+#              tools, and baseline optimizations before any role-specific
+#              configuration (hosting, security, WordPress, etc.).
+#
+# Author: Amir Shams
+# GitHub: https://github.com/AmirShams-ir/LinuxServer
+#
+# Disclaimer: This script is provided for educational and informational
+#             purposes only. Use it responsibly and in compliance with all
+#             applicable laws and regulations.
+#
+# Note: This script is designed to be SAFE, IDEMPOTENT, and NON-DESTRUCTIVE.
+#       Review before use. No application-level services are installed here.
+# -----------------------------------------------------------------------------
+#!/usr/bin/env bash
+# -----------------------------------------------------------------------------
+# Description: Mandatory base initialization for fresh Debian/Ubuntu VPS
+# Author: BabyBoss
+# GitHub: https://github.com/AmirShams-ir/LinuxServer
+# -----------------------------------------------------------------------------
+
 set -e
 
 # ==================================================
@@ -133,7 +156,7 @@ wget -qO- https://repo.litespeed.sh | bash
 apt install -y openlitespeed \
   lsphp82 lsphp82-common lsphp82-curl \
   lsphp82-intl lsphp82-mysql \
-  lsphp82-opcache lsphp82-zip
+  lsphp82-opcache 
 
 systemctl enable lsws
 
