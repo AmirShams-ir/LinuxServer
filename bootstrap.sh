@@ -53,9 +53,9 @@ if touch "$LOG" &>/dev/null; then
   echo "[*] Logging enabled: $LOG"
 fi
 
-echo "=================================================="
-echo " Server Bootstrap Started"
-echo "=================================================="
+echo -e "\e[1;33m══════════════════════════════════════════════════\e[0m"
+echo -e " \e[1;33m✔ Bootstrap Script Started\e[0m"
+echo -e "\e[1;33m══════════════════════════════════════════════════\e[0m"
 
 # --------------------------------------------------
 # Status flags (for final report)
@@ -223,3 +223,4 @@ unset SWAP_SIZE
 unset LOG CURRENT_TZ LOCALE RAM_MB SWAP_SIZE
 unset STATUS_TIMEZONE STATUS_LOCALE STATUS_UPDATE STATUS_PACKAGES
 unset STATUS_SWAP STATUS_SYSCTL STATUS_JOURNALD STATUS_AUTOUPDATE STATUS_BBR
+rm bootstrap.sh
