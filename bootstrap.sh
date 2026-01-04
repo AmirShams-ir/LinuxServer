@@ -62,7 +62,7 @@ if ! grep -Eqi '^(ID=(ubuntu|debian)|ID_LIKE=.*(debian|ubuntu))' /etc/os-release
 fi
 
 # --------------------------------------------------
-# Timezone & Locale (optional, UTC recommended)
+# Timezone & Locale (optional)
 # --------------------------------------------------
 echo "[*] Timezone & locale configuration"
 echo "    Recommendation: UTC (best for logs & servers)"
@@ -91,7 +91,6 @@ if [[ "$TZ_CONFIRM" =~ ^[Yy]$ ]]; then
     fi
   fi
 
-  # ---- Locale ----
   read -rp "Enter locale (e.g. en_US.UTF-8, fa_IR.UTF-8) [skip]: " LOCALE
   if [[ -n "$LOCALE" ]]; then
     locale-gen "$LOCALE"
