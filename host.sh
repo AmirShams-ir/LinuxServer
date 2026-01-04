@@ -13,7 +13,7 @@ set -e
 TIMEZONE="UTC"
 SSH_PORT=22
 OLS_ADMIN_PORT=7080
-
+NETDATA_PORT=19999
 DNS_PRIMARY="1.1.1.1"
 DNS_SECONDARY="8.8.8.8"
 DNS_TERTIARY="9.9.9.9"
@@ -103,8 +103,6 @@ log "DNS A record is valid"
 # FIREWALL
 # ==================================================
 log "Configuring UFW firewall"
-
-NETDATA_PORT=19999
 
 ufw --force reset
 ufw default deny incoming
@@ -214,5 +212,22 @@ echo -e "\e[1;32m ✔ SSL      : Issued\e[0m"
 echo -e "\e[1;32m ✔ Web      : OpenLiteSpeed\e[0m"
 echo -e "\e[1;32m ✔ Firewall : UFW + Fail2Ban\e[0m"
 echo -e "\e[1;36m══════════════════════════════════════════════\e[0m"
-
 echo
+
+# ==================================================
+# CLEAN EXIT
+# ==================================================
+unset TIMEZONE
+unset SSH_PORT
+unset OLS_ADMIN_PORT
+unset NETDATA_PORT
+unset DNS_PRIMARY
+unset DNS_SECONDARY
+unset DNS_TERTIARY
+unset HOSTNAME
+unset DOMAIN
+unset FQDN
+unset ADMIN_EMAIL
+unset SERVER_IP
+unset DNS_IP
+unset DEBIAN_FRONTEND
