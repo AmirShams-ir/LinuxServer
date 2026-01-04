@@ -103,13 +103,19 @@ log "DNS A record is valid"
 # FIREWALL
 # ==================================================
 log "Configuring UFW firewall"
+
+NETDATA_PORT=19999
+
 ufw --force reset
 ufw default deny incoming
 ufw default allow outgoing
-ufw allow ${SSH_PORT}/tcp
-ufw allow 80/tcp
-ufw allow 443/tcp
-ufw allow ${OLS_ADMIN_PORT}/tcp
+
+ufw allow ${SSH_PORT}/tcp      # SSH
+ufw allow 80/tcp               # HTTP
+ufw allow 443/tcp              # HTTPS
+ufw allow ${OLS_ADMIN_PORT}/tcp # OpenLiteSpeed Admin
+ufw allow ${NETDATA_PORT}/tcp  # Netdata
+
 ufw --force enable
 
 # ==================================================
