@@ -15,18 +15,24 @@
 # Note: This script is designed to be SAFE, IDEMPOTENT, and NON-DESTRUCTIVE.
 #       Review before use. No application-level services are installed here.
 # -----------------------------------------------------------------------------
+#!/usr/bin/env bash
+# -----------------------------------------------------------------------------
+# Description: Mandatory base initialization for fresh Debian/Ubuntu VPS
+# Author: BabyBoss
+# GitHub: https://github.com/AmirShams-ir/LinuxServer
+# -----------------------------------------------------------------------------
 
 set -euo pipefail
 
 # --------------------------------------------------
-# Root / sudo handling (smart escalation)
+# Root / sudo handling
 # --------------------------------------------------
 if [[ "$EUID" -ne 0 ]]; then
   if command -v sudo >/dev/null 2>&1; then
     echo "Re-running script with sudo..."
     exec sudo bash "$0" "$@"
   else
-    echo "Error: Root privileges required and sudo not available."
+    echo "Error: Root privileges required."
     exit 1
   fi
 fi
@@ -45,8 +51,6 @@ LOG="/var/log/server-bootstrap.log"
 if touch "$LOG" &>/dev/null; then
   exec > >(tee -a "$LOG") 2>&1
   echo "[*] Logging enabled: $LOG"
-else
-  echo "[!] Logging disabled (no write access to /var/log)"
 fi
 
 echo "=================================================="
@@ -54,108 +58,89 @@ echo " Server Bootstrap Started"
 echo "=================================================="
 
 # --------------------------------------------------
-# OS validation (Debian / Ubuntu)
+# Status flags (for final report)
+# --------------------------------------------------
+STATUS_TIMEZONE=false
+STATUS_LOCALE=false
+STATUS_UPDATE=false
+STATUS_PACKAGES=false
+STATUS_SWAP=false
+STATUS_SYSCTL=false
+STATUS_JOURNALD=false
+STATUS_AUTOUPDATE=false
+STATUS_BBR=false
+
+# --------------------------------------------------
+# OS validation
 # --------------------------------------------------
 if ! grep -Eqi '^(ID=(ubuntu|debian)|ID_LIKE=.*(debian|ubuntu))' /etc/os-release; then
-  echo "ERROR: This script supports Debian-based systems only."
+  echo "ERROR: Debian/Ubuntu only."
   exit 1
 fi
 
 # --------------------------------------------------
 # Timezone & Locale (FORCED)
 # --------------------------------------------------
-echo "[*] Configuring timezone and locale (UTC / en_US.UTF-8)"
+echo "[*] Configuring timezone & locale..."
 
 if has_systemd; then
   CURRENT_TZ="$(timedatectl show -p Timezone --value 2>/dev/null || true)"
-  if [[ "$CURRENT_TZ" != "UTC" ]]; then
-    timedatectl set-timezone UTC
-    echo "[+] Timezone set to UTC"
-  else
-    echo "[*] Timezone already UTC"
-  fi
-else
-  echo "[!] systemd not available, skipping timezone"
+  [[ "$CURRENT_TZ" != "UTC" ]] && timedatectl set-timezone UTC
+  STATUS_TIMEZONE=true
 fi
 
 LOCALE="en_US.UTF-8"
 if ! locale -a | grep -qx "$LOCALE"; then
-  echo "[*] Generating locale $LOCALE"
   sed -i 's/^# *\(en_US.UTF-8 UTF-8\)/\1/' /etc/locale.gen
   locale-gen "$LOCALE"
-else
-  echo "[*] Locale $LOCALE already exists"
 fi
-
 update-locale LANG="$LOCALE" LC_ALL="$LOCALE"
-export LANG="$LOCALE"
-export LC_ALL="$LOCALE"
+export LANG="$LOCALE" LC_ALL="$LOCALE"
+STATUS_LOCALE=true
 
 # --------------------------------------------------
 # Base system update
 # --------------------------------------------------
-echo "[*] Updating base system..."
+echo "[*] Updating system..."
 apt update -y
 apt upgrade -y
 apt autoremove -y
 apt autoclean -y
+STATUS_UPDATE=true
 
 # --------------------------------------------------
-# Essential packages
+# Essential packages + unattended-upgrades
 # --------------------------------------------------
 echo "[*] Installing essential packages..."
 apt install -y \
-  sudo \
-  curl \
-  wget \
-  git \
-  ca-certificates \
-  gnupg \
-  lsb-release \
-  htop \
-  zip \
-  unzip \
-  net-tools \
-  openssl \
-  build-essential \
-  bash-completion \
-  unattended-upgrades
+  sudo curl wget git ca-certificates gnupg lsb-release \
+  htop zip unzip net-tools openssl build-essential \
+  bash-completion unattended-upgrades
+STATUS_PACKAGES=true
 
-# --------------------------------------------------
-# Automatic security updates (FORCED)
-# --------------------------------------------------
-echo "[*] Enabling unattended security upgrades..."
+echo "[*] Enabling automatic security updates..."
 dpkg-reconfigure -f noninteractive unattended-upgrades
+STATUS_AUTOUPDATE=true
 
 # --------------------------------------------------
-# Swap creation (adaptive)
+# Swap (adaptive)
 # --------------------------------------------------
 echo "[*] Checking swap..."
 if ! swapon --show | grep -q swap; then
   RAM_MB="$(free -m | awk '/Mem:/ {print $2}')"
+  [[ "$RAM_MB" -lt 2048 ]] && SWAP_SIZE="2G" || SWAP_SIZE="1G"
 
-  if [[ "$RAM_MB" -lt 2048 ]]; then
-    SWAP_SIZE="2G"
-  else
-    SWAP_SIZE="1G"
-  fi
-
-  echo "[*] Creating swap ($SWAP_SIZE)..."
   fallocate -l "$SWAP_SIZE" /swapfile
   chmod 600 /swapfile
   mkswap /swapfile
   swapon /swapfile
-
-  grep -q "/swapfile" /etc/fstab || \
-    echo "/swapfile none swap sw 0 0" >> /etc/fstab
-else
-  echo "[*] Swap already exists"
+  grep -q "/swapfile" /etc/fstab || echo "/swapfile none swap sw 0 0" >> /etc/fstab
 fi
+STATUS_SWAP=true
 
 # --------------------------------------------------
 # Sysctl baseline
 # --------------------------------------------------
-echo "[*] Applying sysctl baseline..."
 cat <<EOF >/etc/sysctl.d/99-bootstrap.conf
 vm.swappiness=10
 fs.file-max=100000
@@ -164,37 +149,76 @@ net.ipv4.conf.all.accept_redirects=0
 net.ipv4.conf.all.send_redirects=0
 EOF
 
-sysctl --system
+sysctl --system >/dev/null
+STATUS_SYSCTL=true
+
+# --------------------------------------------------
+# TCP BBR
+# --------------------------------------------------
+echo "[*] Configuring TCP BBR..."
+if sysctl net.ipv4.tcp_available_congestion_control 2>/dev/null | grep -qw bbr; then
+  cat <<EOF >/etc/sysctl.d/99-bbr.conf
+net.core.default_qdisc=fq
+net.ipv4.tcp_congestion_control=bbr
+EOF
+  sysctl --system >/dev/null
+  STATUS_BBR=true
+fi
 
 # --------------------------------------------------
 # Journald limits
 # --------------------------------------------------
-echo "[*] Limiting journald disk usage..."
 mkdir -p /etc/systemd/journald.conf.d
-
 cat <<EOF >/etc/systemd/journald.conf.d/limit.conf
 [Journal]
 SystemMaxUse=200M
 RuntimeMaxUse=100M
 EOF
 
-if has_systemd; then
-  systemctl restart systemd-journald
-fi
+has_systemd && systemctl restart systemd-journald
+STATUS_JOURNALD=true
 
 # --------------------------------------------------
-# Cleanup (FULL – paranoia mode 😄)
+# Final Report
+# --------------------------------------------------
+report() {
+  local label="$1" status="$2"
+  if [[ "$status" == true ]]; then
+    printf "  %-34s \e[32m[ OK ]\e[0m\n" "$label"
+  else
+    printf "  %-34s \e[33m[ SKIPPED ]\e[0m\n" "$label"
+  fi
+}
+
+echo
+echo -e "\e[36m==================================================\e[0m"
+echo -e "\e[1m               BOOTSTRAP EXECUTION REPORT\e[0m"
+echo -e "\e[36m==================================================\e[0m"
+report "Timezone configuration"        "$STATUS_TIMEZONE"
+report "Locale configuration"          "$STATUS_LOCALE"
+report "System update & upgrade"       "$STATUS_UPDATE"
+report "Essential packages"            "$STATUS_PACKAGES"
+report "Swap configuration"            "$STATUS_SWAP"
+report "Sysctl baseline"               "$STATUS_SYSCTL"
+report "Journald limits"               "$STATUS_JOURNALD"
+report "Automatic security updates"    "$STATUS_AUTOUPDATE"
+report "TCP BBR congestion control"    "$STATUS_BBR"
+
+echo
+echo -e "\e[36m══════════════════════════════════════════════════\e[0m"
+echo -e " \e[32m✔ Bootstrap completed successfully\e[0m"
+echo -e " \e[32m✔ System is clean, updated & production-ready\e[0m"
+echo -e "\e[36m══════════════════════════════════════════════════\e[0m"
+echo
+
+# --------------------------------------------------
+# Cleanup (safe mode)
 # --------------------------------------------------
 unset LOG
 unset CURRENT_TZ
 unset LOCALE
 unset RAM_MB
 unset SWAP_SIZE
-
-# --------------------------------------------------
-# Done
-# --------------------------------------------------
-echo "=================================================="
-echo " Bootstrap completed successfully"
-echo " System is clean, predictable, and production-ready"
-echo "=================================================="
+unset LOG CURRENT_TZ LOCALE RAM_MB SWAP_SIZE
+unset STATUS_TIMEZONE STATUS_LOCALE STATUS_UPDATE STATUS_PACKAGES
+unset STATUS_SWAP STATUS_SYSCTL STATUS_JOURNALD STATUS_AUTOUPDATE STATUS_BBR
