@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
 # -----------------------------------------------------------------------------
-# Mandatory base initialization for fresh Debian/Ubuntu VPS
+# Description: This script performs mandatory base hosting setup on a fresh
+#              Linux VPS.
+#
 # Author: Amir Shams
 # GitHub: https://github.com/AmirShams-ir/LinuxServer
+#
+# Disclaimer: This script is provided for educational and informational
+#             purposes only. Use it responsibly and in compliance with all
+#             applicable laws and regulations.
+#
+# Note: This script is designed to be SAFE, IDEMPOTENT, and NON-DESTRUCTIVE.
+#       Review before use. No application-level services are installed here.
 # -----------------------------------------------------------------------------
 
 set -e

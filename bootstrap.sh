@@ -15,12 +15,6 @@
 # Note: This script is designed to be SAFE, IDEMPOTENT, and NON-DESTRUCTIVE.
 #       Review before use. No application-level services are installed here.
 # -----------------------------------------------------------------------------
-#!/usr/bin/env bash
-# -----------------------------------------------------------------------------
-# Description: Mandatory base initialization for fresh Debian/Ubuntu VPS
-# Author: BabyBoss
-# GitHub: https://github.com/AmirShams-ir/LinuxServer
-# -----------------------------------------------------------------------------
 
 set -euo pipefail
 
