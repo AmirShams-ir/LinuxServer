@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
 set -e
 
-### ================================
-### CONFIG (EDIT THESE)
-### ================================
-HOSTNAME="vps"
-DOMAIN="example.com"
-FQDN="${HOSTNAME}.${DOMAIN}"
-ADMIN_EMAIL="admin@example.com"
+# ==================================================
+# CONFIGS
+# ==================================================
 TIMEZONE="UTC"
 SSH_PORT=22
 OLS_ADMIN_PORT=7080
-### ================================
+DNS_PRIMARY="1.1.1.1"
+DNS_SECONDARY="8.8.8.8"
+DNS_TERTIARY="9.9.9.9"
+
+read -rp "Enter hostname (e.g. vps): " HOSTNAME
+read -rp "Enter domain name (e.g. example.com): " DOMAIN
+read -rp "Enter admin email (for SSL & alerts): " ADMIN_EMAIL
+
+FQDN="${HOSTNAME}.${DOMAIN}"
+# ==================================================
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -23,41 +28,54 @@ warn() {
   echo -e "\e[33m[!] $1\e[0m"
 }
 
-### ================================
-### BASIC SYSTEM SETUP
-### ================================
+# ==================================================
+# BASIC SYSTEM
+# ==================================================
 log "Setting hostname & FQDN"
-hostnamectl set-hostname "$FQDN"
+hostnamectl set-hostname "$FQDN" || true
+grep -q "$FQDN" /etc/hosts || echo "127.0.1.1 $FQDN $HOSTNAME" >> /etc/hosts
 
-echo "127.0.1.1 $FQDN $HOSTNAME" >> /etc/hosts
+log "Setting timezone"
+timedatectl set-timezone "$TIMEZONE" || true
 
-timedatectl set-timezone "$TIMEZONE"
-
-log "Updating system"
+log "System update"
 apt update && apt -y upgrade
 
 apt install -y \
   curl wget unzip git sudo \
   ca-certificates gnupg lsb-release \
   ufw fail2ban software-properties-common \
-  htop ncdu rsyslog
+  htop ncdu rsyslog \
+  dnsutils
 
-### ================================
-### DNS RESOLVER SANITY
-### ================================
-log "Configuring resolv.conf"
-cat > /etc/systemd/resolved.conf <<EOF
+# ==================================================
+# DNS CONFIG (AUTO-DETECT)
+# ==================================================
+log "Configuring DNS"
+
+if systemctl list-unit-files | grep -q systemd-resolved; then
+  cat > /etc/systemd/resolved.conf <<EOF
 [Resolve]
-DNS=1.1.1.1 8.8.8.8
-FallbackDNS=9.9.9.9
+DNS=${DNS_PRIMARY} ${DNS_SECONDARY}
+FallbackDNS=${DNS_TERTIARY}
 EOF
+  systemctl restart systemd-resolved
+else
+  chattr -i /etc/resolv.conf 2>/dev/null || true
+  cat > /etc/resolv.conf <<EOF
+nameserver ${DNS_PRIMARY}
+nameserver ${DNS_SECONDARY}
+nameserver ${DNS_TERTIARY}
+options edns0 trust-ad
+EOF
+  chattr +i /etc/resolv.conf
+fi
 
-systemctl restart systemd-resolved
-
-### ================================
-### FIREWALL (UFW)
-### ================================
+# ==================================================
+# FIREWALL (UFW)
+# ==================================================
 log "Configuring UFW"
+ufw --force reset
 ufw default deny incoming
 ufw default allow outgoing
 ufw allow ${SSH_PORT}/tcp
@@ -66,39 +84,39 @@ ufw allow 443/tcp
 ufw allow ${OLS_ADMIN_PORT}/tcp
 ufw --force enable
 
-### ================================
-### FAIL2BAN
-### ================================
+# ==================================================
+# FAIL2BAN
+# ==================================================
 log "Configuring Fail2Ban"
 cat > /etc/fail2ban/jail.local <<EOF
+[DEFAULT]
+bantime = 1h
+findtime = 10m
+maxretry = 4
+
 [sshd]
 enabled = true
 port = ${SSH_PORT}
-filter = sshd
-logpath = /var/log/auth.log
-maxretry = 4
-bantime = 1h
 
 [litespeed]
 enabled = true
 port = http,https
-filter = litespeed
 logpath = /usr/local/lsws/logs/error.log
 maxretry = 6
-bantime = 1h
 EOF
 
 systemctl enable --now fail2ban
 
-### ================================
-### ANTI-DDOS / KERNEL HARDENING
-### ================================
-log "Applying sysctl hardening"
-cat >> /etc/sysctl.d/99-hardening.conf <<EOF
+# ==================================================
+# ANTI-DDOS / KERNEL HARDENING
+# ==================================================
+log "Applying kernel hardening"
+cat > /etc/sysctl.d/99-hardening.conf <<EOF
 net.ipv4.tcp_syncookies = 1
-net.ipv4.icmp_echo_ignore_broadcasts = 1
 net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.default.accept_redirects = 0
 net.ipv4.conf.all.send_redirects = 0
+net.ipv4.icmp_echo_ignore_broadcasts = 1
 net.ipv4.conf.all.rp_filter = 1
 net.ipv4.tcp_max_syn_backlog = 4096
 net.ipv4.tcp_fin_timeout = 15
@@ -107,65 +125,68 @@ EOF
 
 sysctl --system
 
-### ================================
-### OPENLITESPEED
-### ================================
+# ==================================================
+# OPENLITESPEED + PHP
+# ==================================================
 log "Installing OpenLiteSpeed"
-wget -O - https://repo.litespeed.sh | bash
-apt install -y openlitespeed lsphp82 lsphp82-common lsphp82-curl \
-  lsphp82-intl lsphp82-mysql lsphp82-opcache lsphp82-zip
+wget -qO- https://repo.litespeed.sh | bash
+apt install -y openlitespeed \
+  lsphp82 lsphp82-common lsphp82-curl \
+  lsphp82-intl lsphp82-mysql \
+  lsphp82-opcache lsphp82-zip
 
 systemctl enable lsws
 
-### ================================
-### CERTBOT (LETSENCRYPT)
-### ================================
+# ==================================================
+# CERTBOT
+# ==================================================
 log "Installing Certbot"
 apt install -y certbot
+warn "SSL issuance requires correct DNS A record"
 
-warn "⚠ SSL will work only if DNS A record is correct"
-
-### ================================
-### WP-CLI
-### ================================
+# ==================================================
+# WP-CLI
+# ==================================================
 log "Installing WP-CLI"
-curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+curl -sO https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
 chmod +x wp-cli.phar
 mv wp-cli.phar /usr/local/bin/wp
 
-### ================================
-### WORDPRESS HARDENING TEMPLATE
-### ================================
-log "Preparing WP hardening snippets"
-cat > /root/wp-hardening.txt <<EOF
-disable_file_edit
-disable_xmlrpc
-limit_login_attempts
-force_ssl_admin
-security_headers
+# ==================================================
+# WORDPRESS HARDENING TEMPLATE
+# ==================================================
+log "Creating WP hardening checklist"
+cat > /root/wp-hardening.todo <<EOF
+- Disable XML-RPC
+- Disable file editing
+- Force SSL admin
+- Set correct file permissions
+- Security headers
+- Limit login attempts
 EOF
 
-### ================================
-### SERVER MONITORING (NETDATA)
-### ================================
+# ==================================================
+# SERVER MONITORING (NETDATA)
+# ==================================================
 log "Installing Netdata"
 curl -s https://get.netdata.cloud | bash -s -- --disable-telemetry
 
-### ================================
-### CLEANUP
-### ================================
-log "Cleaning up"
+# ==================================================
+# CLEANUP
+# ==================================================
+log "Cleaning system"
 apt autoremove -y
 apt autoclean -y
 
-### ================================
-### FINAL REPORT
-### ================================
+# ==================================================
+# FINAL REPORT
+# ==================================================
 echo
 echo -e "\e[36m══════════════════════════════════════════════\e[0m"
-echo -e " \e[32m✔ Hosting server bootstrap completed\e[0m"
+echo -e " \e[32m✔ Hosting bootstrap completed successfully\e[0m"
 echo -e " \e[32m✔ Hostname : $FQDN\e[0m"
+echo -e " \e[32m✔ Firewall : UFW + Fail2Ban\e[0m"
 echo -e " \e[32m✔ Web      : OpenLiteSpeed\e[0m"
-echo -e " \e[32m✔ Firewall: UFW + Fail2Ban\e[0m"
-echo -e " \e[32m✔ Monitor : Netdata\e[0m"
+echo -e " \e[32m✔ Monitor  : Netdata\e[0m"
 echo -e "\e[36m══════════════════════════════════════════════\e[0m"
+echo
