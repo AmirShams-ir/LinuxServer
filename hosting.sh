@@ -191,8 +191,10 @@ EOF
 # ==================================================
 # SERVER MONITORING (NETDATA)
 # ==================================================
-log "Installing Netdata"
-curl -s https://get.netdata.cloud | bash -s -- --disable-telemetry
+log "Installing Netdata (Debian repo)"
+apt install -y netdata
+systemctl enable netdata
+systemctl start netdata
 
 # ==================================================
 # CLEANUP
