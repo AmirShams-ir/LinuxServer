@@ -269,7 +269,7 @@ echo -e "\e[1;36m═════════════════════
 echo
 
 # ==================================================
-# CLEAN EXIT (OCD MODE)
+# CLEAN EXIT
 # ==================================================
 unset TIMEZONE SSH_PORT OLS_ADMIN_PORT NETDATA_PORT
 unset DNS_PRIMARY DNS_SECONDARY DNS_TERTIARY
