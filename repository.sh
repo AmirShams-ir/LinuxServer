@@ -34,68 +34,90 @@ echo -e "\e[1;33m═════════════════════
 # --------------------------------------------------
 if [[ "$EUID" -ne 0 ]]; then
   if command -v sudo >/dev/null 2>&1; then
-    echo "Re-running script with sudo..."
     exec sudo bash "$0" "$@"
   else
-    echo "Error: Root privileges required."
+    echo "ERROR: Root privileges required."
     exit 1
   fi
 fi
 
 # --------------------------------------------------
-# OS validation
+# OS detection
 # --------------------------------------------------
-if ! grep -Eqi '^(ID=(ubuntu|debian)|ID_LIKE=.*(debian|ubuntu))' /etc/os-release; then
-  echo "ERROR: Debian/Ubuntu only."
-  exit 1
-fi
-#!/usr/bin/env bash
-set -euo pipefail
+source /etc/os-release
 
-### ---------- Root check ----------
-if [[ $EUID -ne 0 ]]; then
-  echo "This script must be run as root"
-  exit 1
-fi
+OS_ID="$ID"
+OS_VER="$VERSION_ID"
+PRETTY="$PRETTY_NAME"
 
-### ---------- Variables ----------
-DEBIAN_CODENAME="bookworm"
 MAIN_LIST="/etc/apt/sources.list"
 IR_LIST="/etc/apt/sources.list.d/ir-mirror.list"
-PIN_FILE="/etc/apt/preferences.d/99-debian-mirror-priority"
+PIN_FILE="/etc/apt/preferences.d/99-apt-priority"
 
-OFFICIAL_MIRROR="deb http://deb.debian.org/debian ${DEBIAN_CODENAME} main contrib non-free non-free-firmware"
-OFFICIAL_UPDATES="deb http://deb.debian.org/debian ${DEBIAN_CODENAME}-updates main contrib non-free non-free-firmware"
-OFFICIAL_SECURITY="deb http://security.debian.org/debian-security ${DEBIAN_CODENAME}-security main contrib non-free non-free-firmware"
-
-IR_MIRROR="deb http://repo.iut.ac.ir/debian ${DEBIAN_CODENAME} main contrib non-free non-free-firmware"
-
-### ---------- Backup ----------
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-cp -a ${MAIN_LIST} ${MAIN_LIST}.bak.${TIMESTAMP}
+cp -a "$MAIN_LIST" "${MAIN_LIST}.bak.${TIMESTAMP}"
 
-### ---------- Configure official repositories ----------
-cat > ${MAIN_LIST} <<EOF
-# Official Debian repositories
-${OFFICIAL_MIRROR}
-${OFFICIAL_UPDATES}
-${OFFICIAL_SECURITY}
+echo "[*] Detected OS: $PRETTY"
+
+# --------------------------------------------------
+# Debian
+# --------------------------------------------------
+if [[ "$OS_ID" == "debian" ]]; then
+  case "$OS_VER" in
+    11) CODENAME="bullseye" ;;
+    12) CODENAME="bookworm" ;;
+    *) echo "Unsupported Debian version"; exit 1 ;;
+  esac
+
+  cat > "$MAIN_LIST" <<EOF
+deb http://deb.debian.org/debian $CODENAME main contrib non-free non-free-firmware
+deb http://deb.debian.org/debian $CODENAME-updates main contrib non-free non-free-firmware
+deb http://security.debian.org/debian-security ${CODENAME}-security main contrib non-free non-free-firmware
 EOF
 
-echo "[OK] Official Debian repositories configured."
-
-### ---------- Configure Iranian fallback mirror ----------
-cat > ${IR_LIST} <<EOF
-# Iranian fallback mirror (low priority)
-${IR_MIRROR}
+  cat > "$IR_LIST" <<EOF
+deb http://repo.iut.ac.ir/debian $CODENAME main contrib non-free non-free-firmware
 EOF
 
-echo "[OK] Iranian fallback mirror added."
+# --------------------------------------------------
+# Ubuntu
+# --------------------------------------------------
+elif [[ "$OS_ID" == "ubuntu" ]]; then
+  case "$OS_VER" in
+    22.04) CODENAME="jammy" ;;
+    24.04) CODENAME="noble" ;;
+    *) echo "Unsupported Ubuntu version"; exit 1 ;;
+  esac
 
-### ---------- APT pinning ----------
-cat > ${PIN_FILE} <<EOF
+  cat > "$MAIN_LIST" <<EOF
+deb http://archive.ubuntu.com/ubuntu $CODENAME main restricted universe multiverse
+deb http://archive.ubuntu.com/ubuntu $CODENAME-updates main restricted universe multiverse
+deb http://archive.ubuntu.com/ubuntu $CODENAME-security main restricted universe multiverse
+EOF
+
+  cat > "$IR_LIST" <<EOF
+deb http://repo.iut.ac.ir/ubuntu $CODENAME main restricted universe multiverse
+EOF
+
+else
+  echo "Unsupported OS"
+  exit 1
+fi
+
+# --------------------------------------------------
+# APT pinning (Official > Iranian)
+# --------------------------------------------------
+cat > "$PIN_FILE" <<EOF
+Package: *
+Pin: origin archive.ubuntu.com
+Pin-Priority: 900
+
 Package: *
 Pin: origin deb.debian.org
+Pin-Priority: 900
+
+Package: *
+Pin: origin security.ubuntu.com
 Pin-Priority: 900
 
 Package: *
@@ -107,24 +129,23 @@ Pin: origin repo.iut.ac.ir
 Pin-Priority: 100
 EOF
 
-echo "[OK] APT pinning rules applied."
-
-### ---------- Refresh CA & APT ----------
+# --------------------------------------------------
+# Refresh CA & APT
+# --------------------------------------------------
 apt clean
 apt install --reinstall -y ca-certificates >/dev/null
 update-ca-certificates >/dev/null
 
-echo "[OK] CA certificates refreshed."
-
-### ---------- Update & verify ----------
 apt update
 
 echo
 echo -e "\e[1;36m══════════════════════════════════════════════\e[0m"
-echo -e "\e[1;33mAPT mirror configuration completed successfully\e[0m"
-echo -e "\e[1;33mPrimary : deb.debian.org\e[0m"
+echo -e "\e[1;33mAPT repository configured successfully\e[0m"
+echo -e "\e[1;33mOS : $PRETTY\e[0m"
+echo -e "\e[1;33mPrimary : Official repositories\e[0m"
 echo -e "\e[1;33mFallback: repo.iut.ac.ir\e[0m"
 echo -e "\e[1;36m══════════════════════════════════════════════\e[0m"
+
 echo
 echo -e "\e[1;36mVerification (apt policy bash):\e[0m"
 apt policy bash | sed -n '1,12p'
