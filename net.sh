@@ -143,7 +143,6 @@ fi
     php${PHP_VERSION}-gd \
     php${PHP_VERSION}-intl \
     php${PHP_VERSION}-opcache
-fi
 
 systemctl enable php${PHP_VERSION}-fpm
 systemctl start php${PHP_VERSION}-fpm
