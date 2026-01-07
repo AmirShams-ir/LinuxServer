@@ -81,60 +81,47 @@ log "MariaDB hardened successfully"
 # DETECT OS
 # ==================================================
 . /etc/os-release
-
 log "Detected OS: $PRETTY_NAME"
+read -rp "Enter PHP Version (e.g. 8.1): " PHP_VERSION
 
 # ==================================================
 # SELECT PHP VERSION
 # ==================================================
 if [[ "$ID" == "debian" && "$VERSION_ID" == "11" ]]; then
-  PHP_VERSION="8.1"
-  PHP_SOURCE="backports"
+  PHP_SOURCE="ondrej"
 
 elif [[ "$ID" == "debian" && "$VERSION_ID" == "12" ]]; then
-  PHP_VERSION="8.2"
   PHP_SOURCE="native"
 
 elif [[ "$ID" == "ubuntu" && "$VERSION_ID" == "22.04" ]]; then
-  PHP_VERSION="8.1"
   PHP_SOURCE="native"
 
 elif [[ "$ID" == "ubuntu" && "$VERSION_ID" == "24.04" ]]; then
-  PHP_VERSION="8.3"
   PHP_SOURCE="native"
 
 else
   die "Unsupported OS version"
 fi
 
-log "Installing PHP $PHP_VERSION ($PHP_SOURCE)"
+log "Installing PHP on $ID $VERSION_ID $PHP_VERSION ($PHP_SOURCE)"
 
 # ==================================================
-# ENABLE BACKPORTS (Debian 11 only)
+# ENABLE SURY-REPO (Debian 11 only)
 # ==================================================
-if [[ "$PHP_SOURCE" == "backports" ]]; then
-  grep -q "bullseye-backports" /etc/apt/sources.list.d/backports.list || \
-    echo "deb deb http://deb.debian.org/debian unstable main" >> /etc/apt/sources.list.d/backports.list
+if [[ "$PHP_SOURCE" == "ondrej" ]]; then
+  apt install apt-transport-https
+  curl -sSLo /usr/share/keyrings/deb.sury.org-php.gpg https://packages.sury.org/php/apt.gpg
+  sh -c 'echo "deb [signed-by=/usr/share/keyrings/deb.sury.org-php.gpg] https://packages.sury.org/php/ $(lsb_release -sc) main" > /etc/apt/sources.list.d/php.list'
+  apt update
+  apt upgrade -y
 fi
 
 apt update -y
+apt upgrade -y
 
 # ==================================================
 # INSTALL PHP
 # ==================================================
-if [[ "$PHP_SOURCE" == "backports" ]]; then
-  apt -t bullseye-backports install -y \
-    php${PHP_VERSION}-fpm \
-    php${PHP_VERSION}-cli \
-    php${PHP_VERSION}-mysql \
-    php${PHP_VERSION}-curl \
-    php${PHP_VERSION}-mbstring \
-    php${PHP_VERSION}-xml \
-    php${PHP_VERSION}-zip \
-    php${PHP_VERSION}-gd \
-    php${PHP_VERSION}-intl \
-    php${PHP_VERSION}-opcache
-else
   apt install -y \
     php${PHP_VERSION}-fpm \
     php${PHP_VERSION}-cli \
