@@ -107,9 +107,9 @@ STATUS_UPDATE=true
 # --------------------------------------------------
 echo "[*] Installing essential packages..."
 apt install -y \
-  sudo curl wget git ca-certificates gnupg lsb-release \
+  sudo curl wget git dialog ca-certificates gnupg lsb-release \
   htop zip unzip net-tools openssl build-essential \
-  bash-completion unattended-upgrades
+  bash-completion unattended-upgrades autoremove autoclean 
 STATUS_PACKAGES=true
 
 echo "[*] Enabling automatic security updates..."
