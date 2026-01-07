@@ -5,7 +5,7 @@ set -euo pipefail
 # CONFIG
 # ==================================================
 PHP_VERSION="8.2"
-LOG="/var/log/bootstrap-hosting.log"
+LOG="/var/log/apps-hosting.log"
 
 exec > >(tee -a "$LOG") 2>&1
 
@@ -234,22 +234,17 @@ sysctl -w fs.file-max=100000
 # ==================================================
 # FINAL REPORT
 # ==================================================
-log "Bootstrap completed successfully 🎉"
 
-cat <<EOF
-
-========================================
- HOSTING ENVIRONMENT READY
-========================================
-Nginx        : Installed
-MariaDB      : Installed
-PHP-FPM      : $PHP_VERSION
-PHP-MyAdmin  : /phpmyadmin
-Certbot      : Ready
-Firewall     : Enabled
-========================================
-
-EOF
+echo
+echo -e "\e[1;36m══════════════════════════════════════════════════\e[0m"
+echo -e " \e[1;32m✔ Nginx        : Installed\e[0m"
+echo -e " \e[1;32m✔ MariaDB      : Installed\e[0m"
+echo -e " \e[1;32m✔ PHP-FPM      : $PHP_VERSION\e[0m"
+echo -e " \e[1;32m✔ PHP-MyAdmin  : Ready\e[0m"
+echo -e " \e[1;32m✔ Certbot      : Ready\e[0m"
+echo -e " \e[1;32m✔ Firewall     : Enabled\e[0m"
+echo -e "\e[1;36m══════════════════════════════════════════════════\e[0m"
+echo
 
 # --------------------------------------------------
 # Cleanup (safe mode)
