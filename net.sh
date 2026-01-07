@@ -114,7 +114,7 @@ log "Installing PHP $PHP_VERSION ($PHP_SOURCE)"
 # ==================================================
 if [[ "$PHP_SOURCE" == "backports" ]]; then
   grep -q "bullseye-backports" /etc/apt/sources.list || \
-    echo "deb http://deb.debian.org/debian bullseye-backports main" >> /etc/apt/sources.list
+    echo "deb http://archive.debian.org/debian bullseye-backports main" >> /etc/apt/sources.list
 fi
 
 apt update -y
@@ -236,7 +236,7 @@ sysctl -w net.core.somaxconn=1024
 sysctl -w fs.file-max=100000
 
 # ==================================================
-# FINAL
+# FINAL REPORT
 # ==================================================
 log "Bootstrap completed successfully 🎉"
 
@@ -246,9 +246,9 @@ cat <<EOF
  HOSTING ENVIRONMENT READY
 ========================================
 Nginx        : Installed
-MySQL        : Installed
+MariaDB      : Installed
 PHP-FPM      : $PHP_VERSION
-phpMyAdmin   : /phpmyadmin
+PHP-MyAdmin  : /phpmyadmin
 Certbot      : Ready
 Firewall     : Enabled
 ========================================
