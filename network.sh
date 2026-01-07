@@ -196,7 +196,7 @@ echo -e "\e[1;36m═════════════════════
 echo -e "\e[1;32m ✔ Hostname : $FQDN\e[0m"
 echo -e "\e[1;32m ✔ DNS      : OK\e[0m"
 echo -e "\e[1;32m ✔ SSL      : Issued\e[0m"
-echo -e "\e[1;32m ✔ Monitor  : vnStat (lightweight)\e[0m"
+echo -e "\e[1;32m ✔ Monitor  : vnStat\e[0m"
 echo -e "\e[1;36m══════════════════════════════════════════════\e[0m"
 echo
 
