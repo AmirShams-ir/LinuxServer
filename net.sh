@@ -87,13 +87,13 @@ log "Detected OS: $PRETTY_NAME"
 # SELECT PHP VERSION
 # ==================================================
 if [[ "$ID" == "debian" && "$VERSION_ID" == "11" ]]; then
-  PHP_SOURCE="ondrej"
+  PHP_SOURCE="sury"
 
 elif [[ "$ID" == "debian" && "$VERSION_ID" == "12" ]]; then
   PHP_SOURCE="native"
 
 elif [[ "$ID" == "ubuntu" && "$VERSION_ID" == "22.04" ]]; then
-  PHP_SOURCE="native"
+  PHP_SOURCE="sury"
 
 elif [[ "$ID" == "ubuntu" && "$VERSION_ID" == "24.04" ]]; then
   PHP_SOURCE="native"
@@ -105,18 +105,28 @@ read -rp "Enter PHP Version (e.g. 8.1): " PHP_VERSION
 log "Installing PHP on $ID $VERSION_ID $PHP_VERSION ($PHP_SOURCE)"
 
 # ==================================================
-# ENABLE SURY-REPO (Debian 11 only)
+# ENABLE SURY REPO (Debian 11 - Ubuntu 22.04)
 # ==================================================
-if [[ "$PHP_SOURCE" == "ondrej" ]]; then
-  apt install apt-transport-https
-  curl -sSLo /usr/share/keyrings/deb.sury.org-php.gpg https://packages.sury.org/php/apt.gpg
-  sh -c 'echo "deb [signed-by=/usr/share/keyrings/deb.sury.org-php.gpg] https://packages.sury.org/php/ $(lsb_release -sc) main" > /etc/apt/sources.list.d/php.list'
-  apt update
-  apt upgrade -y
-fi
+if [[ "$PHP_SOURCE" == "sury" ]]; then
 
-apt update -y
-apt upgrade -y
+  apt update
+  apt install -y ca-certificates apt-transport-https curl gnupg lsb-release
+
+  # Add Sury GPG key
+  curl -fsSL https://packages.sury.org/php/apt.gpg | gpg --dearmor -o /usr/share/keyrings/php.gpg
+
+  # Add Sury repository explicitly for bullseye
+  echo "deb [signed-by=/usr/share/keyrings/php.gpg] https://packages.sury.org/php/ bullseye main" \
+    > /etc/apt/sources.list.d/php.list
+
+  # Pin Sury repository (CRITICAL)
+  cat <<EOF > /etc/apt/preferences.d/php-sury
+Package: *
+Pin: origin packages.sury.org
+Pin-Priority: 1001
+EOF
+  apt update
+fi
 
 # ==================================================
 # INSTALL PHP
@@ -137,7 +147,6 @@ fi
 
 systemctl enable php${PHP_VERSION}-fpm
 systemctl start php${PHP_VERSION}-fpm
-php -v
 
 # ==================================================
 # PHP HARDENING (SAFE & UNIVERSAL)
