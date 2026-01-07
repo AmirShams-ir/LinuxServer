@@ -82,7 +82,6 @@ log "MariaDB hardened successfully"
 # ==================================================
 . /etc/os-release
 log "Detected OS: $PRETTY_NAME"
-read -rp "Enter PHP Version (e.g. 8.1): " PHP_VERSION
 
 # ==================================================
 # SELECT PHP VERSION
@@ -102,7 +101,7 @@ elif [[ "$ID" == "ubuntu" && "$VERSION_ID" == "24.04" ]]; then
 else
   die "Unsupported OS version"
 fi
-
+read -rp "Enter PHP Version (e.g. 8.1): " PHP_VERSION
 log "Installing PHP on $ID $VERSION_ID $PHP_VERSION ($PHP_SOURCE)"
 
 # ==================================================
@@ -123,6 +122,7 @@ apt upgrade -y
 # INSTALL PHP
 # ==================================================
   apt install -y \
+    php${PHP_VERSION} \
     php${PHP_VERSION}-fpm \
     php${PHP_VERSION}-cli \
     php${PHP_VERSION}-mysql \
