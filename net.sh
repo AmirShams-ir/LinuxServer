@@ -56,24 +56,22 @@ systemctl start mariadb
 # ==================================================
 # MARIADB HARDENING
 # ==================================================
-log "Hardening MariaDB"
+log "Hardening MariaDB (safe method)"
 
 mysql <<'EOF'
--- Use system unix socket authentication for root (Debian best practice)
-UPDATE mysql.user
-SET plugin = 'unix_socket'
-WHERE User = 'root' AND Host = 'localhost';
+-- Ensure root uses unix_socket authentication
+ALTER USER 'root'@'localhost' IDENTIFIED VIA unix_socket;
 
 -- Remove anonymous users
-DELETE FROM mysql.user WHERE User = '';
+DROP USER IF EXISTS ''@'localhost';
+DROP USER IF EXISTS ''@'%';
 
 -- Disable remote root login
-DELETE FROM mysql.user WHERE User = 'root' AND Host NOT IN ('localhost');
+DROP USER IF EXISTS 'root'@'%';
 
 -- Remove test database
 DROP DATABASE IF EXISTS test;
 
--- Apply changes
 FLUSH PRIVILEGES;
 EOF
 
