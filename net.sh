@@ -113,7 +113,7 @@ log "Installing PHP $PHP_VERSION ($PHP_SOURCE)"
 # ENABLE BACKPORTS (Debian 11 only)
 # ==================================================
 if [[ "$PHP_SOURCE" == "backports" ]]; then
-  grep -q "bullseye-backports" /etc/apt/sources.list || \
+  grep -q "bullseye-backports" /etc/apt/sources.list.d/backports.list || \
     echo "deb deb http://deb.debian.org/debian unstable main" >> /etc/apt/sources.list.d/backports.list
 fi
 
