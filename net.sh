@@ -137,6 +137,7 @@ fi
 
 systemctl enable php${PHP_VERSION}-fpm
 systemctl start php${PHP_VERSION}-fpm
+php -v
 
 # ==================================================
 # PHP HARDENING (SAFE & UNIVERSAL)
