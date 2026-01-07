@@ -26,7 +26,7 @@ grep -Eq 'debian|ubuntu' /etc/os-release || die "Only Debian/Ubuntu supported"
 # ==================================================
 log "Updating system"
 apt update -y
-apt upgrade -y
+
 
 apt install -y \
   ca-certificates \
