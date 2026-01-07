@@ -46,21 +46,38 @@ systemctl enable nginx
 systemctl start nginx
 
 # ==================================================
-# MYSQL
+# Mariadb-Server
 # ==================================================
-log "Installing MySQL"
-apt install -y mysql-server
-systemctl enable mysql
-systemctl start mysql
+log "Installing Mariadb-Server"
+apt install -y mariadb-server
+systemctl enable mariadb
+systemctl start mariadb
 
-# Basic hardening (non-interactive)
-mysql <<EOF
-ALTER USER 'root'@'localhost'
-IDENTIFIED WITH mysql_native_password BY 'StrongRootPass!123';
-DELETE FROM mysql.user WHERE User='';
+# ==================================================
+# MARIADB HARDENING
+# ==================================================
+log "Hardening MariaDB"
+
+mysql <<'EOF'
+-- Use system unix socket authentication for root (Debian best practice)
+UPDATE mysql.user
+SET plugin = 'unix_socket'
+WHERE User = 'root' AND Host = 'localhost';
+
+-- Remove anonymous users
+DELETE FROM mysql.user WHERE User = '';
+
+-- Disable remote root login
+DELETE FROM mysql.user WHERE User = 'root' AND Host NOT IN ('localhost');
+
+-- Remove test database
 DROP DATABASE IF EXISTS test;
+
+-- Apply changes
 FLUSH PRIVILEGES;
 EOF
+
+log "MariaDB hardened successfully"
 
 # ==================================================
 # PHP + PHP-FPM
