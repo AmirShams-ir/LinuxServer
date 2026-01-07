@@ -26,7 +26,7 @@ if touch "$LOG" &>/dev/null; then
 fi
 
 echo -e "\e[1;33m══════════════════════════════════════════════════\e[0m"
-echo -e " \e[1;33m✔ Repo Script Started\e[0m"
+echo -e " \e[1;33m✔ Repository Setup Started\e[0m"
 echo -e "\e[1;33m══════════════════════════════════════════════════\e[0m"
 
 # --------------------------------------------------
@@ -63,44 +63,70 @@ echo "[*] Detected OS: $PRETTY"
 # Debian
 # --------------------------------------------------
 if [[ "$OS_ID" == "debian" ]]; then
+
   case "$OS_VER" in
-    11) CODENAME="bullseye" ;;
-    12) CODENAME="bookworm" ;;
-    *) echo "Unsupported Debian version"; exit 1 ;;
+    11)
+      CODENAME="bullseye"
+      COMPONENTS="main contrib non-free"
+      ;;
+    12)
+      CODENAME="bookworm"
+      COMPONENTS="main contrib non-free non-free-firmware"
+      ;;
+    *)
+      echo "ERROR: Unsupported Debian version: $OS_VER"
+      exit 1
+      ;;
   esac
 
+  echo "[*] Configuring Debian $OS_VER ($CODENAME)"
+
   cat > "$MAIN_LIST" <<EOF
-deb http://deb.debian.org/debian $CODENAME main contrib non-free non-free-firmware
-deb http://deb.debian.org/debian $CODENAME-updates main contrib non-free non-free-firmware
-deb http://security.debian.org/debian-security ${CODENAME}-security main contrib non-free non-free-firmware
+# Debian official repositories
+deb http://deb.debian.org/debian $CODENAME $COMPONENTS
+deb http://deb.debian.org/debian $CODENAME-updates $COMPONENTS
+deb http://security.debian.org/debian-security ${CODENAME}-security $COMPONENTS
 EOF
 
   cat > "$IR_LIST" <<EOF
-deb http://repo.iut.ac.ir/debian $CODENAME main contrib non-free non-free-firmware
+# Iranian fallback mirror
+deb http://repo.iut.ac.ir/debian $CODENAME $COMPONENTS
 EOF
 
 # --------------------------------------------------
 # Ubuntu
 # --------------------------------------------------
 elif [[ "$OS_ID" == "ubuntu" ]]; then
+
   case "$OS_VER" in
-    22.04) CODENAME="jammy" ;;
-    24.04) CODENAME="noble" ;;
-    *) echo "Unsupported Ubuntu version"; exit 1 ;;
+    22.04)
+      CODENAME="jammy"
+      ;;
+    24.04)
+      CODENAME="noble"
+      ;;
+    *)
+      echo "ERROR: Unsupported Ubuntu version: $OS_VER"
+      exit 1
+      ;;
   esac
 
+  echo "[*] Configuring Ubuntu $OS_VER ($CODENAME)"
+
   cat > "$MAIN_LIST" <<EOF
+# Ubuntu official repositories
 deb http://archive.ubuntu.com/ubuntu $CODENAME main restricted universe multiverse
 deb http://archive.ubuntu.com/ubuntu $CODENAME-updates main restricted universe multiverse
 deb http://archive.ubuntu.com/ubuntu $CODENAME-security main restricted universe multiverse
 EOF
 
   cat > "$IR_LIST" <<EOF
+# Iranian fallback mirror
 deb http://repo.iut.ac.ir/ubuntu $CODENAME main restricted universe multiverse
 EOF
 
 else
-  echo "Unsupported OS"
+  echo "ERROR: Unsupported OS: $OS_ID"
   exit 1
 fi
 
@@ -109,15 +135,7 @@ fi
 # --------------------------------------------------
 cat > "$PIN_FILE" <<EOF
 Package: *
-Pin: origin archive.ubuntu.com
-Pin-Priority: 900
-
-Package: *
 Pin: origin deb.debian.org
-Pin-Priority: 900
-
-Package: *
-Pin: origin security.ubuntu.com
 Pin-Priority: 900
 
 Package: *
@@ -125,27 +143,42 @@ Pin: origin security.debian.org
 Pin-Priority: 900
 
 Package: *
+Pin: origin archive.ubuntu.com
+Pin-Priority: 900
+
+Package: *
+Pin: origin security.ubuntu.com
+Pin-Priority: 900
+
+Package: *
 Pin: origin repo.iut.ac.ir
 Pin-Priority: 100
 EOF
 
+echo "[OK] APT pinning rules applied."
+
 # --------------------------------------------------
-# Refresh CA & APT
+# Refresh CA & APT (script-safe)
 # --------------------------------------------------
-apt clean
-apt install --reinstall -y ca-certificates >/dev/null
+apt-get clean
+apt-get install --reinstall -y ca-certificates >/dev/null
 update-ca-certificates >/dev/null
 
-apt update
+echo "[OK] CA certificates refreshed."
+
+# --------------------------------------------------
+# Update & verify
+# --------------------------------------------------
+apt-get update
 
 echo
 echo -e "\e[1;36m══════════════════════════════════════════════\e[0m"
-echo -e "\e[1;33mAPT repository configured successfully\e[0m"
-echo -e "\e[1;33mOS : $PRETTY\e[0m"
-echo -e "\e[1;33mPrimary : Official repositories\e[0m"
-echo -e "\e[1;33mFallback: repo.iut.ac.ir\e[0m"
+echo -e "\e[1;33mAPT repository configuration completed\e[0m"
+echo -e "\e[1;33mOS       : $PRETTY\e[0m"
+echo -e "\e[1;33mPrimary  : Official repositories\e[0m"
+echo -e "\e[1;33mFallback : repo.iut.ac.ir (IR)\e[0m"
 echo -e "\e[1;36m══════════════════════════════════════════════\e[0m"
 
 echo
 echo -e "\e[1;36mVerification (apt policy bash):\e[0m"
-apt policy bash | sed -n '1,12p'
+apt-cache policy bash | sed -n '1,15p'
