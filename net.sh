@@ -78,41 +78,116 @@ EOF
 log "MariaDB hardened successfully"
 
 # ==================================================
-# PHP + PHP-FPM
+# DETECT OS
 # ==================================================
-log "Installing PHP $PHP_VERSION"
+. /etc/os-release
 
-if ! apt-cache show php${PHP_VERSION}-fpm &>/dev/null; then
-  add-apt-repository -y ppa:ondrej/php
-  apt update -y
+log "Detected OS: $PRETTY_NAME"
+
+# ==================================================
+# SELECT PHP VERSION
+# ==================================================
+if [[ "$ID" == "debian" && "$VERSION_ID" == "11" ]]; then
+  PHP_VERSION="8.1"
+  PHP_SOURCE="backports"
+
+elif [[ "$ID" == "debian" && "$VERSION_ID" == "12" ]]; then
+  PHP_VERSION="8.2"
+  PHP_SOURCE="native"
+
+elif [[ "$ID" == "ubuntu" && "$VERSION_ID" == "22.04" ]]; then
+  PHP_VERSION="8.1"
+  PHP_SOURCE="native"
+
+elif [[ "$ID" == "ubuntu" && "$VERSION_ID" == "24.04" ]]; then
+  PHP_VERSION="8.3"
+  PHP_SOURCE="native"
+
+else
+  die "Unsupported OS version"
 fi
 
-apt install -y \
-  php${PHP_VERSION}-fpm \
-  php${PHP_VERSION}-cli \
-  php${PHP_VERSION}-mysql \
-  php${PHP_VERSION}-curl \
-  php${PHP_VERSION}-mbstring \
-  php${PHP_VERSION}-xml \
-  php${PHP_VERSION}-zip \
-  php${PHP_VERSION}-gd \
-  php${PHP_VERSION}-intl
+log "Installing PHP $PHP_VERSION ($PHP_SOURCE)"
+
+# ==================================================
+# ENABLE BACKPORTS (Debian 11 only)
+# ==================================================
+if [[ "$PHP_SOURCE" == "backports" ]]; then
+  grep -q "bullseye-backports" /etc/apt/sources.list || \
+    echo "deb http://deb.debian.org/debian bullseye-backports main" >> /etc/apt/sources.list
+fi
+
+apt update -y
+
+# ==================================================
+# INSTALL PHP
+# ==================================================
+if [[ "$PHP_SOURCE" == "backports" ]]; then
+  apt -t bullseye-backports install -y \
+    php${PHP_VERSION}-fpm \
+    php${PHP_VERSION}-cli \
+    php${PHP_VERSION}-mysql \
+    php${PHP_VERSION}-curl \
+    php${PHP_VERSION}-mbstring \
+    php${PHP_VERSION}-xml \
+    php${PHP_VERSION}-zip \
+    php${PHP_VERSION}-gd \
+    php${PHP_VERSION}-intl \
+    php${PHP_VERSION}-opcache
+else
+  apt install -y \
+    php${PHP_VERSION}-fpm \
+    php${PHP_VERSION}-cli \
+    php${PHP_VERSION}-mysql \
+    php${PHP_VERSION}-curl \
+    php${PHP_VERSION}-mbstring \
+    php${PHP_VERSION}-xml \
+    php${PHP_VERSION}-zip \
+    php${PHP_VERSION}-gd \
+    php${PHP_VERSION}-intl \
+    php${PHP_VERSION}-opcache
+fi
 
 systemctl enable php${PHP_VERSION}-fpm
 systemctl start php${PHP_VERSION}-fpm
 
 # ==================================================
-# PHP GLOBAL HARDENING
+# PHP HARDENING (SAFE & UNIVERSAL)
 # ==================================================
 PHP_INI="/etc/php/${PHP_VERSION}/fpm/php.ini"
 
+log "Applying PHP hardening"
+
 sed -i 's/^expose_php.*/expose_php = Off/' $PHP_INI
+sed -i 's/^display_errors.*/display_errors = Off/' $PHP_INI
+sed -i 's/^log_errors.*/log_errors = On/' $PHP_INI
 sed -i 's/^memory_limit.*/memory_limit = 256M/' $PHP_INI
 sed -i 's/^upload_max_filesize.*/upload_max_filesize = 64M/' $PHP_INI
 sed -i 's/^post_max_size.*/post_max_size = 64M/' $PHP_INI
 sed -i 's/^max_execution_time.*/max_execution_time = 60/' $PHP_INI
+sed -i 's/^cgi.fix_pathinfo.*/cgi.fix_pathinfo = 0/' $PHP_INI
 
 systemctl reload php${PHP_VERSION}-fpm
+
+# ==================================================
+# PHP Version REPORT
+# ==================================================
+cat <<EOF
+
+========================================
+ PHP INSTALLATION COMPLETED 🎉
+========================================
+OS            : $PRETTY_NAME
+PHP Version   : $PHP_VERSION
+Source        : $PHP_SOURCE
+FPM Socket    : /run/php/php${PHP_VERSION}-fpm.sock
+========================================
+
+Use this in create-host.sh:
+PHP_VERSION="$PHP_VERSION"
+
+========================================
+EOF
 
 # ==================================================
 # PHPMYADMIN
