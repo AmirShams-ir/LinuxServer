@@ -22,6 +22,7 @@ set -euo pipefail
 # CONFIG
 # ==================================================
 read -rp "Enter PHP Version (e.g. 8.1): " PHP_VERSION
+read -rp "Enter Domain (e.g. example.com): " DOMAIN
 LOG="/var/log/apps-hosting.log"
 
 exec > >(tee -a "$LOG") 2>&1
@@ -59,6 +60,58 @@ log "Installing Nginx"
 apt install -y nginx
 systemctl enable nginx
 systemctl start nginx
+
+# ==================================================
+# CERTBOT
+# ==================================================
+log "Installing Certbot"
+apt install -y certbot python3-certbot-nginx
+
+# ==================================================
+# NGINX VHOST + SSL
+# ==================================================
+WEBROOT="/var/www/$DOMAIN"
+
+log "Creating web root"
+mkdir -p "$WEBROOT"
+chown -R www-data:www-data "$WEBROOT"
+
+log "Creating Nginx vhost for $DOMAIN"
+cat > /etc/nginx/sites-available/$DOMAIN <<EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $DOMAIN;
+
+    root $WEBROOT;
+    index index.html;
+
+    location / {
+        try_files \$uri \$uri/ =404;
+    }
+}
+EOF
+
+log "Enabling Nginx vhost"
+ln -sf /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/
+
+log "Removing default Nginx site"
+rm -f /etc/nginx/sites-enabled/default
+
+log "Testing Nginx config"
+nginx -t
+
+log "Reloading Nginx"
+systemctl reload nginx
+
+# ==================================================
+# SSL CERTIFICATE (Let's Encrypt)
+# ==================================================
+log "Issuing SSL certificate for $DOMAIN"
+certbot --nginx -d $DOMAIN --non-interactive --agree-tos -m admin@$DOMAIN --redirect
+
+log "Reloading Nginx after SSL"
+systemctl reload nginx
 
 # ==================================================
 # MARIADB
@@ -185,12 +238,6 @@ location /phpmyadmin {
 EOF
 
 # ==================================================
-# CERTBOT
-# ==================================================
-log "Installing Certbot"
-apt install -y certbot python3-certbot-nginx
-
-# ==================================================
 # FIREWALL
 # ==================================================
 log "Configuring firewall"
@@ -210,6 +257,7 @@ echo " Source    : $PHP_SOURCE"
 echo " FPM Sock  : /run/php/php${PHP_VERSION}-fpm.sock"
 echo "========================================"
 
+unset DOMAIN WEBROOT
 unset PHP_INI PHP_SOURCE PHP_VERSION PRETTY_NAME CODENAME
 
 
