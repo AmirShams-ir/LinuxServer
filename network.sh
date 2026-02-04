@@ -56,9 +56,21 @@ export DEBIAN_FRONTEND=noninteractive
 # ==================================================
 TIMEZONE="UTC"
 
-DNS_PRIMARY="1.1.1.1"
-DNS_SECONDARY="8.8.8.8"
-DNS_TERTIARY="9.9.9.9"
+DNS_MAIN1="1.1.1.1"
+DNS_MAIN2="1.0.0.1"
+DNS_MAIN3="8.8.8.8"
+DNS_MAIN4="4.2.2.4"
+DNS_MAIN5="9.9.9.9"
+DNS_MAIN6="149.112.112.112"
+
+DNS_LOCAL1="185.51.200.2"
+DNS_LOCAL2="178.22.122.100"
+DNS_LOCAL3="10.202.10.102"
+DNS_LOCAL4="10.202.10.202"
+DNS_LOCAL5="185.55.225.25"
+DNS_LOCAL6="185.55.225.26"
+DNS_LOCAL7="181.41.194.177"
+DNS_LOCAL8="181.41.194.186"
 
 # ==================================================
 # INTERACTIVE CONFIG
@@ -110,17 +122,30 @@ if systemctl list-unit-files | grep -q systemd-resolved; then
   sed -i '/^\[Resolve\]/,$d' /etc/systemd/resolved.conf 2>/dev/null || true
   cat >> /etc/systemd/resolved.conf <<EOF
 [Resolve]
-DNS=${DNS_PRIMARY} ${DNS_SECONDARY}
-FallbackDNS=${DNS_TERTIARY}
-DNSSEC=yes
+DNS=${DNS_MAIN1} ${DNS_MAIN3} ${DNS_MAIN5} ${DNS_LOCAL1} ${DNS_LOCAL3} ${DNS_LOCAL5} ${DNS_LOCAL7}
+FallbackDNS=${DNS_MAIN2} ${DNS_MAIN4} ${DNS_MAIN6} ${DNS_LOCAL2} ${DNS_LOCAL4} ${DNS_LOCAL6} ${DNS_LOCAL8}
+DNSSEC=no
 EOF
   systemctl restart systemd-resolved
 else
   cat > /etc/resolv.conf <<EOF
-nameserver ${DNS_PRIMARY}
-nameserver ${DNS_SECONDARY}
-nameserver ${DNS_TERTIARY}
-options edns0 trust-ad
+nameserver ${DNS_MAIN1}
+nameserver ${DNS_MAIN2}
+nameserver ${DNS_MAIN3}
+nameserver ${DNS_MAIN4}
+nameserver ${DNS_MAIN5}
+nameserver ${DNS_MAIN6}
+
+nameserver ${DNS_LOCAL1}
+nameserver ${DNS_LOCAL2}
+nameserver ${DNS_LOCAL3}
+nameserver ${DNS_LOCAL4}
+nameserver ${DNS_LOCAL5}
+nameserver ${DNS_LOCAL6}
+nameserver ${DNS_LOCAL7}
+nameserver ${DNS_LOCAL8}
+
+options edns0
 EOF
 fi
 
