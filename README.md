@@ -19,7 +19,7 @@ bash -c "$(curl -Lfo- https://raw.githubusercontent.com/AmirShams-ir/LinuxServer
 bash -c "$(curl -Lfo- https://raw.githubusercontent.com/AmirShams-ir/LinuxServer/refs/heads/main/security.sh)"
 bash -c "$(curl -Lfo- https://raw.githubusercontent.com/AmirShams-ir/LinuxServer/refs/heads/main/network.sh)"
 bash -c "$(curl -Lfo- https://raw.githubusercontent.com/AmirShams-ir/LinuxServer/refs/heads/main/apps.sh)"
-bash -c "$(curl -Lfo- https://raw.githubusercontent.com/AmirShams-ir/LinuxServer/refs/heads/main/host.sh)"
+bash -c "$(curl -Lfo- https://raw.githubusercontent.com/AmirShams-ir/LinuxServer/refs/heads/main/hosting.sh)"
 ```
 
 You can donate to me through Plisio at ❤️
