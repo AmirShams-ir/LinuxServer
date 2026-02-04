@@ -101,8 +101,8 @@ log "User created"
 # ==============================================================================
 # QUOTA (1GB)
 # ==============================================================================
-setquota -u "$USERNAME" $((DISK_QUOTA_MB*1024)) $((DISK_QUOTA_MB*1024)) 0 0 /
-log "Disk quota set to ${DISK_QUOTA_MB}MB"
+setquota -u "$USERNAME" 1048576 1048576 0 0 /
+log "Disk quota set for $USERNAME"
 
 # ==============================================================================
 # DIRECTORIES
