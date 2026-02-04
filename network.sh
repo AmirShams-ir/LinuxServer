@@ -107,13 +107,7 @@ apt-get install -y \
 # --------------------------------------------------
 log "Configuring DNS (systemd-resolved)"
 
-if systemctl list-unit-files | grep -q systemd-resolved; then
-
-  # Backup
-  cp /etc/systemd/resolved.conf \
-     /etc/systemd/resolved.conf.bak.$(date +%F_%T) 2>/dev/null || true
-
-  cat > /etc/systemd/resolved.conf <<EOF
+cat >> /etc/systemd/resolved.conf <<EOF
 [Resolve]
 DNS=${DNS_MAIN1} ${DNS_MAIN3} ${DNS_MAIN5} ${DNS_LOCAL1} ${DNS_LOCAL3} ${DNS_LOCAL5} ${DNS_LOCAL7}
 FallbackDNS=${DNS_MAIN2} ${DNS_MAIN4} ${DNS_MAIN6} ${DNS_LOCAL2} ${DNS_LOCAL4} ${DNS_LOCAL6} ${DNS_LOCAL8}
@@ -147,12 +141,10 @@ EOF
   ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
   systemctl restart systemd-resolved
 
-else
-warn "systemd-resolved not found, using resolv.conf"
-
 fi
 
 log "DNS configured successfully"
+resolvectl status
 
 # --------------------------------------------------
 # DNS A RECORD CHECK
