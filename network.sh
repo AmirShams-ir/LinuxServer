@@ -22,27 +22,17 @@ set -euo pipefail
 LOG="/var/log/server-network.log"
 if touch "$LOG" &>/dev/null; then
   exec > >(tee -a "$LOG") 2>&1
-  echo "[*] Logging enabled: $LOG"
 fi
 
-echo -e "\e[1;33m══════════════════════════════════════════════════\e[0m"
-echo -e " \e[1;33m✔ Network Setup Script Started\e[0m"
-echo -e "\e[1;33m══════════════════════════════════════════════════\e[0m"
-
 # --------------------------------------------------
-# Root / sudo handling
+# Root Check
 # --------------------------------------------------
 if [[ "$EUID" -ne 0 ]]; then
-  if command -v sudo >/dev/null 2>&1; then
-    exec sudo bash "$0" "$@"
-  else
-    echo "ERROR: Root privileges required."
-    exit 1
-  fi
+  exec sudo bash "$0" "$@"
 fi
 
 # --------------------------------------------------
-# OS validation
+# OS Check
 # --------------------------------------------------
 if ! grep -Eqi '^(ID=(ubuntu|debian)|ID_LIKE=.*(debian|ubuntu))' /etc/os-release; then
   echo "ERROR: Debian/Ubuntu only."
@@ -51,18 +41,20 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 
-# ==================================================
+# --------------------------------------------------
 # GLOBAL CONFIG
-# ==================================================
+# --------------------------------------------------
 TIMEZONE="UTC"
 
+# Global DNS
 DNS_MAIN1="1.1.1.1"
 DNS_MAIN2="1.0.0.1"
-DNS_MAIN3="8.8.8.8"
-DNS_MAIN4="4.2.2.4"
-DNS_MAIN5="9.9.9.9"
-DNS_MAIN6="149.112.112.112"
+DNS_MAIN3="9.9.9.9"
+DNS_MAIN4="149.112.112.112"
+DNS_MAIN5="8.8.8.8"
+DNS_MAIN6="4.2.2.4"
 
+# Iranian / Bypass DNS (Fallback)
 DNS_LOCAL1="185.51.200.2"
 DNS_LOCAL2="178.22.122.100"
 DNS_LOCAL3="10.202.10.102"
@@ -72,62 +64,75 @@ DNS_LOCAL6="185.55.225.26"
 DNS_LOCAL7="181.41.194.177"
 DNS_LOCAL8="181.41.194.186"
 
-# ==================================================
-# INTERACTIVE CONFIG
-# ==================================================
-read -rp "Enter hostname (e.g. vps): " HOSTNAME
-read -rp "Enter domain name (e.g. example.com): " DOMAIN
-read -rp "Enter admin email (SSL & alerts): " ADMIN_EMAIL
+# --------------------------------------------------
+# INPUT
+# --------------------------------------------------
+read -rp "Hostname: " HOSTNAME
+read -rp "Domain: " DOMAIN
+read -rp "Admin Email: " ADMIN_EMAIL
 
 [[ -z "$HOSTNAME" || -z "$DOMAIN" || -z "$ADMIN_EMAIL" ]] && {
-  echo "ERROR: Hostname, domain and email must not be empty."
+  echo "ERROR: Empty input"
   exit 1
 }
 
 FQDN="${HOSTNAME}.${DOMAIN}"
 
-# ==================================================
+# --------------------------------------------------
 # HELPERS
-# ==================================================
+# --------------------------------------------------
 log()  { echo -e "\e[32m[✔] $1\e[0m"; }
 warn() { echo -e "\e[33m[!] $1\e[0m"; }
 die()  { echo -e "\e[31m[✖] $1\e[0m"; exit 1; }
 
-# ==================================================
+# --------------------------------------------------
 # BASIC SYSTEM
-# ==================================================
-log "Setting hostname & FQDN"
+# --------------------------------------------------
+log "Setting hostname"
 hostnamectl set-hostname "$FQDN" || true
 grep -q "$FQDN" /etc/hosts || echo "127.0.1.1 $FQDN $HOSTNAME" >> /etc/hosts
 
 log "Setting timezone"
 timedatectl set-timezone "$TIMEZONE" || true
 
-log "Updating system packages"
+log "Updating system"
 apt-get update
 apt-get -y dist-upgrade
 
-log "Installing base utilities"
+log "Installing base packages"
 apt-get install -y \
-  curl wget unzip git sudo \
+  curl wget git sudo unzip \
   ca-certificates gnupg lsb-release \
-  htop ncdu rsyslog dnsutils
+  htop ncdu dnsutils
 
-# ==================================================
-# DNS RESOLVER CONFIG
-# ==================================================
-log "Configuring system DNS resolver"
+# --------------------------------------------------
+# DNS CONFIG (SAFE MODE)
+# --------------------------------------------------
+log "Configuring DNS (systemd-resolved)"
 
 if systemctl list-unit-files | grep -q systemd-resolved; then
-  sed -i '/^\[Resolve\]/,$d' /etc/systemd/resolved.conf 2>/dev/null || true
-  cat >> /etc/systemd/resolved.conf <<EOF
+
+  # Backup
+  cp /etc/systemd/resolved.conf \
+     /etc/systemd/resolved.conf.bak.$(date +%F_%T) 2>/dev/null || true
+
+  cat > /etc/systemd/resolved.conf <<EOF
 [Resolve]
 DNS=${DNS_MAIN1} ${DNS_MAIN3} ${DNS_MAIN5} ${DNS_LOCAL1} ${DNS_LOCAL3} ${DNS_LOCAL5} ${DNS_LOCAL7}
 FallbackDNS=${DNS_MAIN2} ${DNS_MAIN4} ${DNS_MAIN6} ${DNS_LOCAL2} ${DNS_LOCAL4} ${DNS_LOCAL6} ${DNS_LOCAL8}
+DNSOverTLS=opportunistic
 DNSSEC=no
+Cache=yes
 EOF
+
   systemctl restart systemd-resolved
+
+  ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+
 else
+
+  warn "systemd-resolved not found, using resolv.conf"
+
   cat > /etc/resolv.conf <<EOF
 nameserver ${DNS_MAIN1}
 nameserver ${DNS_MAIN2}
@@ -147,69 +152,57 @@ nameserver ${DNS_LOCAL8}
 
 options edns0
 EOF
+
 fi
 
-log "DNS resolver configured"
+log "DNS configured successfully"
 
-# ==================================================
-# DNS A RECORD VERIFICATION
-# ==================================================
-log "Validating DNS A record for $FQDN"
+# --------------------------------------------------
+# DNS A RECORD CHECK
+# --------------------------------------------------
+log "Validating DNS A record"
 
-SERVER_IP=$(curl -fsSL https://api.ipify.org)
-DNS_IP=$(dig +short "$FQDN" A | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n1)
+SERVER_IP=$(curl -fsSL https://api.ipify.org || true)
+DNS_IP=$(dig +short "$FQDN" A | head -n1 || true)
 
-if [[ "$SERVER_IP" != "$DNS_IP" ]]; then
-  warn "DNS A record mismatch"
-  echo " Expected IP : $SERVER_IP"
-  echo " DNS IP      : ${DNS_IP:-NOT FOUND}"
-  echo
-  echo "👉 Please set DNS A record:"
-  echo "   $FQDN  →  $SERVER_IP"
-  die "Fix DNS first, then re-run the script"
+if [[ -n "$SERVER_IP" && "$SERVER_IP" != "$DNS_IP" ]]; then
+  warn "A record mismatch"
+  echo "Server IP: $SERVER_IP"
+  echo "DNS IP   : ${DNS_IP:-NOT FOUND}"
+  die "Fix DNS first"
 fi
 
-log "DNS A record verified successfully"
+log "DNS record OK"
 
-# ==================================================
-# SSL (LETSENCRYPT)
-# ==================================================
+# --------------------------------------------------
+# SSL (Certbot)
+# --------------------------------------------------
 log "Installing Certbot"
 apt-get install -y certbot
 
-if systemctl is-active --quiet lsws; then
-  systemctl stop lsws
-  NEED_LSWS_RESTART=1
-fi
-
-log "Issuing SSL certificate for $FQDN"
+log "Issuing SSL certificate"
 certbot certonly \
   --standalone \
-  --preferred-challenges http \
-  --agree-tos \
   --non-interactive \
+  --agree-tos \
   -m "$ADMIN_EMAIL" \
   -d "$FQDN"
 
-[[ "${NEED_LSWS_RESTART:-0}" == "1" ]] && systemctl start lsws
+log "SSL ready"
 
-log "SSL certificate issued successfully"
-
-# ==================================================
-# LIGHTWEIGHT NETWORK MONITORING
-# ==================================================
-log "Installing lightweight network monitoring (vnStat)"
+# --------------------------------------------------
+# NETWORK MONITOR (LOW RESOURCE)
+# --------------------------------------------------
+log "Installing vnStat"
 apt-get install -y vnstat
 
 systemctl enable vnstat
 systemctl start vnstat
 
-log "vnStat enabled (low resource usage)"
-
-# ==================================================
+# --------------------------------------------------
 # CLEANUP
-# ==================================================
-log "Cleaning system"
+# --------------------------------------------------
+log "Cleanup"
 apt-get autoremove -y
 apt-get autoclean -y
 
