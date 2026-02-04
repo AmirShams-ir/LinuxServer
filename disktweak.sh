@@ -136,16 +136,20 @@ elif [[ "$ROOT_SRC" =~ ^/dev/sd[a-z][0-9]+$ || "$ROOT_SRC" =~ ^/dev/vd[a-z][0-9]
   log "Partition  : $PART_NUM"
 
   log "Growing partition..."
-  growpart "$DISK_DEV" "$PART_NUM" || die "growpart failed"
+if growpart "$DISK_DEV" "$PART_NUM"; then
+  log "Partition grown successfully"
+else
+  warn "Partition cannot be grown (already at maximum size). Skipping."
+fi
 
-  log "Resizing filesystem..."
-  if [[ "$FS_TYPE" == "ext4" ]]; then
-    resize2fs "$ROOT_SRC" || die "resize2fs failed"
-  elif [[ "$FS_TYPE" == "xfs" ]]; then
-    xfs_growfs / || die "xfs_growfs failed"
-  else
-    warn "Unsupported filesystem for resize: $FS_TYPE"
-  fi
+log "Resizing filesystem..."
+if [[ "$FS_TYPE" == "ext4" ]]; then
+  resize2fs "$ROOT_SRC" || die "resize2fs failed"
+elif [[ "$FS_TYPE" == "xfs" ]]; then
+  xfs_growfs / || die "xfs_growfs failed"
+else
+  warn "Unsupported filesystem for resize: $FS_TYPE"
+fi
 
 # ------------------------------------------------------------------------------
 # Case 3: Unknown / unsupported layout
