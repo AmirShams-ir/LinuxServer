@@ -122,15 +122,7 @@ DNSSEC=no
 Cache=yes
 EOF
 
-  systemctl restart systemd-resolved
-
-  ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
-
-else
-
-  warn "systemd-resolved not found, using resolv.conf"
-
-  cat > /etc/resolv.conf <<EOF
+cat >> /etc/resolv.conf <<EOF
 nameserver ${DNS_MAIN1}
 nameserver ${DNS_MAIN2}
 nameserver ${DNS_MAIN3}
@@ -149,6 +141,14 @@ nameserver ${DNS_LOCAL8}
 
 options edns0
 EOF
+
+  systemctl enable systemd-resolved
+  systemctl start systemd-resolved
+  ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+  systemctl restart systemd-resolved
+
+else
+warn "systemd-resolved not found, using resolv.conf"
 
 fi
 
