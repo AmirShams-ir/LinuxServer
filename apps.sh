@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 # -----------------------------------------------------------------------------
-# Description: This script performs mandatory base initialization on a fresh
-#              Linux VPS. It prepares the system with safe defaults, essential
-#              tools, and baseline optimizations before any role-specific
-#              configuration (hosting, security, WordPress, etc.).
+# Description: This script performs mandatory base hosting setup on a fresh
+#              Linux VPS.
 #
 # Author: Amir Shams
 # GitHub: https://github.com/AmirShams-ir/LinuxServer
@@ -16,40 +14,48 @@
 #       Review before use. No application-level services are installed here.
 # -----------------------------------------------------------------------------
 
-set -euo pipefail
+# ==============================================================================
+# Strict mode
+# ==============================================================================
+set -Eeuo pipefail
 
-# --------------------------------------------------
-# Logging
-# --------------------------------------------------
-LOG="/var/log/server-apps.log"
-if touch "$LOG" &>/dev/null; then
-  exec > >(tee -a "$LOG") 2>&1
-  echo "[*] Logging enabled: $LOG"
-fi
-
-echo -e "\e[1;36m══════════════════════════════════════════\e[0m"
-echo -e " \e[1;32m✔ Application Setup Script Started\e[0m"
-echo -e "\e[1;36m══════════════════════════════════════════\e[0m"
-
-# --------------------------------------------------
+# ==============================================================================
 # Root / sudo handling
-# --------------------------------------------------
-if [[ "$EUID" -ne 0 ]]; then
+# ==============================================================================
+if [[ "${EUID}" -ne 0 ]]; then
   if command -v sudo >/dev/null 2>&1; then
-    exec sudo bash "$0" "$@"
+    echo "🔐 Root privileges required. Please enter sudo password..."
+    exec sudo -E bash "$0" "$@"
   else
-    echo "ERROR: Root privileges required."
+    echo "❌ ERROR: This script must be run as root."
     exit 1
   fi
 fi
 
-# --------------------------------------------------
+# ==============================================================================
 # OS validation
-# --------------------------------------------------
-if ! grep -Eqi '^(ID=(ubuntu|debian)|ID_LIKE=.*(debian|ubuntu))' /etc/os-release; then
-  echo "ERROR: Debian/Ubuntu only."
+# ==============================================================================
+if [[ ! -f /etc/os-release ]] || \
+   ! grep -Eqi '^(ID=(debian|ubuntu)|ID_LIKE=.*(debian|ubuntu))' /etc/os-release; then
+  echo "❌ ERROR: Unsupported OS. Debian/Ubuntu only."
   exit 1
 fi
+
+# ==============================================================================
+# Logging
+# ==============================================================================
+LOG="/var/log/server-apps.log"
+mkdir -p "$(dirname "$LOG")"
+touch "$LOG"
+exec > >(tee -a "$LOG") 2>&1
+echo "[✔] Logging enabled: $LOG"
+
+# ==============================================================================
+# Banner
+# ==============================================================================
+echo -e "\e[1;36m═══════════════════════════════════════════\e[0m"
+echo -e " \e[1;33m✔ Application install Script Started\e[0m"
+echo -e "\e[1;36m═══════════════════════════════════════════\e[0m"
 
 # ==================================================
 # CONFIG
@@ -188,22 +194,16 @@ log "Installing PHP $PHP_VERSION from $PHP_SOURCE"
 # ENABLE SURY REPO (Debian 11 / Ubuntu 22.04)
 # ==================================================
 if [[ "$PHP_SOURCE" == "sury" ]]; then
-  apt install -y ca-certificates curl gnupg lsb-release
+apt install -y ca-certificates curl gnupg lsb-release
 
-  curl -4 --retry 5 --retry-delay 3 --fail \
-    https://packages.sury.org/php/apt.gpg \
-    | gpg --dearmor -o /usr/share/keyrings/php-sury.gpg
+curl -4fsSL https://packages.sury.org/php/apt.gpg \
+  | gpg --dearmor -o /usr/share/keyrings/php-sury.gpg
 
-  echo "deb [signed-by=/usr/share/keyrings/php-sury.gpg] https://packages.sury.org/php/ ${CODENAME} main" \
-    > /etc/apt/sources.list.d/php-sury.list
+echo "deb [signed-by=/usr/share/keyrings/php-sury.gpg] https://packages.sury.org/php/ bullseye main" \
+  > /etc/apt/sources.list.d/php-sury.list
 
-  cat <<EOF > /etc/apt/preferences.d/php-sury
-Package: *
-Pin: origin packages.sury.org
-Pin-Priority: 1001
-EOF
+apt update
 
-  apt update
 fi
 
 
