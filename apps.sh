@@ -188,10 +188,14 @@ log "Installing PHP $PHP_VERSION from $PHP_SOURCE"
 # ENABLE SURY REPO (Debian 11 / Ubuntu 22.04)
 # ==================================================
 if [[ "$PHP_SOURCE" == "sury" ]]; then
-  curl -fsSL https://packages.sury.org/php/apt.gpg | gpg --dearmor -o /usr/share/keyrings/php.gpg
+  apt install -y ca-certificates curl gnupg lsb-release
 
-  echo "deb [signed-by=/usr/share/keyrings/php.gpg] https://packages.sury.org/php/ ${CODENAME} main" \
-    > /etc/apt/sources.list.d/php.list
+  curl -4 --retry 5 --retry-delay 3 --fail \
+    https://packages.sury.org/php/apt.gpg \
+    | gpg --dearmor -o /usr/share/keyrings/php-sury.gpg
+
+  echo "deb [signed-by=/usr/share/keyrings/php-sury.gpg] https://packages.sury.org/php/ ${CODENAME} main" \
+    > /etc/apt/sources.list.d/php-sury.list
 
   cat <<EOF > /etc/apt/preferences.d/php-sury
 Package: *
@@ -201,6 +205,7 @@ EOF
 
   apt update
 fi
+
 
 # ==================================================
 # INSTALL PHP
@@ -217,8 +222,7 @@ apt install -y \
   php${PHP_VERSION}-gd \
   php${PHP_VERSION}-intl \
   php${PHP_VERSION}-opcache \
-  php${PHP_VERSION}-mysqli \
-  php${PHP_VERSION}-json
+  php${PHP_VERSION}-mysqli
 
 systemctl enable php${PHP_VERSION}-fpm
 systemctl start php${PHP_VERSION}-fpm
