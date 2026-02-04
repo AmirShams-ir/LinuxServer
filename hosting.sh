@@ -58,10 +58,7 @@ log()  { echo -e "\e[32m[✔] $1\e[0m"; }
 warn() { echo -e "\e[33m[!] $1\e[0m"; }
 die()  { echo -e "\e[31m[✖] $1\e[0m"; exit 1; }
 
-#!/usr/bin/env bash
-set -euo pipefail
-
-PHP_VERSION="8.2"
+PHP_VERSION="8.3"
 BASE_DIR="/var/www"
 LOG="/var/log/create-host.log"
 
