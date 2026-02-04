@@ -82,54 +82,81 @@ for pkg in "${REQUIRED_PKGS[@]}"; do
 done
 
 # ==============================================================================
-# Disk expansion (ONLY for fresh VPS layouts)
+# SMART DISK EXPANSION (AUTO-DETECT)
 # ==============================================================================
 
-log "Starting disk expansion..."
+log "Detecting root disk layout..."
 
-# --- Delete small unused partition (if exists) ---
-if lsblk -no NAME /dev/sda | grep -q '^sda3$'; then
-  warn "Deleting unused partition /dev/sda3 (fresh VPS assumption)"
-  (
-    echo d
-    echo 3
-    echo w
-  ) | fdisk /dev/sda
-else
-  log "Partition /dev/sda3 not found, skipping"
-fi
-
-# --- Resize extended partition ---
-log "Resizing extended partition /dev/sda2..."
-parted -s /dev/sda resizepart 2 100% || die "Failed to resize /dev/sda2"
-
-# --- Resize logical partition ---
-log "Resizing logical partition /dev/sda5..."
-growpart /dev/sda 5 || die "Failed to grow /dev/sda5"
-
-# --- Resize LVM PV ---
-log "Resizing LVM physical volume..."
-pvresize /dev/sda5 || die "pvresize failed"
-
-# --- Extend LV ---
-log "Extending logical volume..."
-lvextend -l +100%FREE "$VG_LV_PATH" || die "lvextend failed"
-
-# --- Resize filesystem (filesystem-aware) ---
+ROOT_SRC=$(findmnt -no SOURCE /)
 FS_TYPE=$(findmnt -no FSTYPE /)
-log "Detected root filesystem: $FS_TYPE"
 
-log "Resizing filesystem..."
-if [[ "$FS_TYPE" == "ext4" ]]; then
-  resize2fs "$VG_LV_PATH" || die "resize2fs failed"
-elif [[ "$FS_TYPE" == "xfs" ]]; then
-  xfs_growfs / || die "xfs_growfs failed"
+log "Root source      : $ROOT_SRC"
+log "Filesystem type : $FS_TYPE"
+
+# ------------------------------------------------------------------------------
+# Case 1: LVM-based root (most common on VPS)
+# ------------------------------------------------------------------------------
+if [[ "$ROOT_SRC" == /dev/mapper/* ]]; then
+  log "LVM-based root detected"
+
+  # Detect physical volume backing root VG
+  PV_DEV=$(pvs --noheadings -o pv_name 2>/dev/null | awk '{print $1}' | head -n1)
+
+  if [[ -z "$PV_DEV" ]]; then
+    warn "No LVM physical volume detected. Skipping disk resize."
+  else
+    log "Detected LVM PV: $PV_DEV"
+
+    log "Resizing physical volume..."
+    pvresize "$PV_DEV" || die "pvresize failed"
+
+    log "Extending logical volume..."
+    lvextend -l +100%FREE "$ROOT_SRC" || die "lvextend failed"
+
+    log "Resizing filesystem..."
+    if [[ "$FS_TYPE" == "ext4" ]]; then
+      resize2fs "$ROOT_SRC" || die "resize2fs failed"
+    elif [[ "$FS_TYPE" == "xfs" ]]; then
+      xfs_growfs / || die "xfs_growfs failed"
+    else
+      warn "Unsupported filesystem for resize: $FS_TYPE"
+    fi
+  fi
+
+# ------------------------------------------------------------------------------
+# Case 2: Direct partition root (non-LVM)
+# ------------------------------------------------------------------------------
+elif [[ "$ROOT_SRC" =~ ^/dev/sd[a-z][0-9]+$ || "$ROOT_SRC" =~ ^/dev/vd[a-z][0-9]+$ ]]; then
+  log "Direct partition root detected"
+
+  DISK_DEV="/dev/$(lsblk -no PKNAME "$ROOT_SRC")"
+  PART_NUM="$(echo "$ROOT_SRC" | grep -o '[0-9]*$')"
+
+  log "Disk device : $DISK_DEV"
+  log "Partition  : $PART_NUM"
+
+  log "Growing partition..."
+  growpart "$DISK_DEV" "$PART_NUM" || die "growpart failed"
+
+  log "Resizing filesystem..."
+  if [[ "$FS_TYPE" == "ext4" ]]; then
+    resize2fs "$ROOT_SRC" || die "resize2fs failed"
+  elif [[ "$FS_TYPE" == "xfs" ]]; then
+    xfs_growfs / || die "xfs_growfs failed"
+  else
+    warn "Unsupported filesystem for resize: $FS_TYPE"
+  fi
+
+# ------------------------------------------------------------------------------
+# Case 3: Unknown / unsupported layout
+# ------------------------------------------------------------------------------
 else
-  die "Unsupported filesystem: $FS_TYPE"
+  warn "Unknown root layout ($ROOT_SRC). Skipping disk resize."
 fi
 
-log "Filesystem resize completed"
+log "Disk expansion phase completed"
 df -h /
+
 
 # ==============================================================================
 # Quota bootstrap
