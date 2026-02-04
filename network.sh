@@ -141,8 +141,6 @@ EOF
   ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
   systemctl restart systemd-resolved
 
-fi
-
 log "DNS configured successfully"
 resolvectl status
 
