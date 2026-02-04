@@ -105,8 +105,9 @@ apt-get install -y \
 # --------------------------------------------------
 # DNS CONFIG (SAFE MODE)
 # --------------------------------------------------
-log "Configuring DNS (systemd-resolved)"
-
+log "Configuring system DNS resolver" 
+if systemctl list-unit-files | grep -q systemd-resolved; 
+then sed -i '/^\[Resolve\]/,$d' /etc/systemd/resolved.conf 2>/dev/null || true 
 cat > /etc/systemd/resolved.conf <<EOF
 [Resolve]
 DNS=${DNS_MAIN1} ${DNS_MAIN3} ${DNS_MAIN5} ${DNS_LOCAL1} ${DNS_LOCAL3} ${DNS_LOCAL5} ${DNS_LOCAL7}
@@ -115,6 +116,12 @@ DNSOverTLS=opportunistic
 DNSSEC=no
 Cache=yes
 EOF
+  systemctl enable systemd-resolved
+  systemctl start systemd-resolved
+  ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+  systemctl restart systemd-resolved
+  
+else 
 
 cat > /etc/resolv.conf <<EOF
 nameserver ${DNS_MAIN1}
@@ -123,7 +130,6 @@ nameserver ${DNS_MAIN3}
 nameserver ${DNS_MAIN4}
 nameserver ${DNS_MAIN5}
 nameserver ${DNS_MAIN6}
-
 nameserver ${DNS_LOCAL1}
 nameserver ${DNS_LOCAL2}
 nameserver ${DNS_LOCAL3}
@@ -132,16 +138,12 @@ nameserver ${DNS_LOCAL5}
 nameserver ${DNS_LOCAL6}
 nameserver ${DNS_LOCAL7}
 nameserver ${DNS_LOCAL8}
-
 options edns0
 EOF
-
-  systemctl enable systemd-resolved
-  systemctl start systemd-resolved
-  ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
-  systemctl restart systemd-resolved
+fi
 
 log "DNS configured successfully"
+
 resolvectl status
 
 # --------------------------------------------------
