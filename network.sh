@@ -67,15 +67,10 @@ DNS_LOCAL8="181.41.194.186"
 # --------------------------------------------------
 # INPUT
 # --------------------------------------------------
-read -rp "Hostname: " HOSTNAME
-read -rp "Domain: " DOMAIN
-read -rp "Admin Email: " ADMIN_EMAIL
-
-[[ -z "$HOSTNAME" || -z "$DOMAIN" || -z "$ADMIN_EMAIL" ]] && {
-  echo "ERROR: Empty input"
-  exit 1
-}
-
+read -rp "Enter hostname (e.g. vps): " HOSTNAME 
+read -rp "Enter domain name (e.g. example.com): " DOMAIN 
+read -rp "Enter admin email (SSL & alerts): " ADMIN_EMAIL 
+[[ -z "$HOSTNAME" || -z "$DOMAIN" || -z "$ADMIN_EMAIL" ]] && { echo "ERROR: Hostname, domain and email must not be empty." exit 1 }
 FQDN="${HOSTNAME}.${DOMAIN}"
 
 # --------------------------------------------------
