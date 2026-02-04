@@ -1,4 +1,4 @@
- #!/usr/bin/env bash
+#!/usr/bin/env bash
 # -----------------------------------------------------------------------------
 # Description: This script performs mandatory base hosting setup on a fresh
 #              Linux VPS.
@@ -14,42 +14,49 @@
 #       Review before use. No application-level services are installed here.
 # -----------------------------------------------------------------------------
 
-set -euo pipefail
+# ==============================================================================
+# Strict mode
+# ==============================================================================
+set -Eeuo pipefail
 
-# --------------------------------------------------
-# Logging
-# --------------------------------------------------
-LOG="/var/log/server-host.log"
-if touch "$LOG" &>/dev/null; then
-  exec > >(tee -a "$LOG") 2>&1
-  echo "[*] Logging enabled: $LOG"
-fi
-
-echo -e "\e[1;36m══════════════════════════════════════════\e[0m"
-echo -e " \e[1;32m✔ Hosting Setup Script Started\e[0m"
-echo -e "\e[1;36m══════════════════════════════════════════\e[0m"
-
-# --------------------------------------------------
+# ==============================================================================
 # Root / sudo handling
-# --------------------------------------------------
-if [[ "$EUID" -ne 0 ]]; then
+# ==============================================================================
+if [[ "${EUID}" -ne 0 ]]; then
   if command -v sudo >/dev/null 2>&1; then
-    exec sudo bash "$0" "$@"
+    echo "🔐 Root privileges required. Please enter sudo password..."
+    exec sudo -E bash "$0" "$@"
   else
-    echo "ERROR: Root privileges required."
+    echo "❌ ERROR: This script must be run as root."
     exit 1
   fi
 fi
 
-# --------------------------------------------------
+# ==============================================================================
 # OS validation
-# --------------------------------------------------
-if ! grep -Eqi '^(ID=(ubuntu|debian)|ID_LIKE=.*(debian|ubuntu))' /etc/os-release; then
-  echo "ERROR: Debian/Ubuntu only."
+# ==============================================================================
+if [[ ! -f /etc/os-release ]] || \
+   ! grep -Eqi '^(ID=(debian|ubuntu)|ID_LIKE=.*(debian|ubuntu))' /etc/os-release; then
+  echo "❌ ERROR: Unsupported OS. Debian/Ubuntu only."
   exit 1
 fi
 
-export DEBIAN_FRONTEND=noninteractive
+# ==============================================================================
+# Logging
+# ==============================================================================
+LOG="/var/log/server-hosting.log"
+mkdir -p "$(dirname "$LOG")"
+touch "$LOG"
+exec > >(tee -a "$LOG") 2>&1
+echo "[✔] Logging enabled: $LOG"
+
+# ==============================================================================
+# Banner
+# ==============================================================================
+echo -e "\e[1;36m═══════════════════════════════════════════\e[0m"
+echo -e " \e[1;33m✔ Hosting Script Started\e[0m"
+echo -e "\e[1;36m═══════════════════════════════════════════\e[0m"
+
 
 # ==================================================
 # HELPERS
