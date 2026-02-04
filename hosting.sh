@@ -57,70 +57,72 @@ echo -e "\e[1;36m═════════════════════
 echo -e " \e[1;33m✔ Hosting Script Started\e[0m"
 echo -e "\e[1;36m═══════════════════════════════════════════\e[0m"
 
+# ==============================================================================
+# CONFIG
+# ==============================================================================
+PHP_VERSION="8.3"
+BASE_DIR="/var/www"
+LOG="/var/log/create-host.log"
+DISK_QUOTA_MB=1024
 
-# ==================================================
-# HELPERS
-# ==================================================
+exec > >(tee -a "$LOG") 2>&1
+
 log()  { echo -e "\e[32m[✔] $1\e[0m"; }
 warn() { echo -e "\e[33m[!] $1\e[0m"; }
 die()  { echo -e "\e[31m[✖] $1\e[0m"; exit 1; }
 
-PHP_VERSION="8.3"
-BASE_DIR="/var/www"
-LOG="/var/log/create-host.log"
-
-exec >> "$LOG" 2>&1
-
-log() { echo -e "\e[32m[✔] $1\e[0m"; }
-die() { echo -e "\e[31m[✖] $1\e[0m"; exit 1; }
-
-[[ $EUID -eq 0 ]] || die "Run as root"
-
+# ==============================================================================
+# INPUT
+# ==============================================================================
 echo "=== CREATE NEW HOST ==="
 
 read -rp "Domain (example.com): " DOMAIN
-read -rp "Username (linux user): " USERNAME
+read -rp "Username: " USERNAME
 read -rsp "Password: " PASSWORD; echo
 read -rp "Email: " EMAIL
 
 [[ -z "$DOMAIN" || -z "$USERNAME" || -z "$PASSWORD" ]] && die "Missing input"
 
 WEBROOT="$BASE_DIR/$DOMAIN"
-POOL_NAME="${USERNAME}"
 SOCKET="/run/php/php-fpm-${USERNAME}.sock"
 DB_NAME="db_${USERNAME}"
 DB_USER="u_${USERNAME}"
 DB_PASS=$(openssl rand -base64 16)
 
-# ==================================================
+# ==============================================================================
 # USER
-# ==================================================
-if id "$USERNAME" &>/dev/null; then
-  die "User already exists"
-fi
+# ==============================================================================
+id "$USERNAME" &>/dev/null && die "User already exists"
 
 useradd -m -d "$WEBROOT" -s /bin/bash "$USERNAME"
 echo "$USERNAME:$PASSWORD" | chpasswd
+log "User created"
 
-# ==================================================
+# ==============================================================================
+# QUOTA (1GB)
+# ==============================================================================
+setquota -u "$USERNAME" $((DISK_QUOTA_MB*1024)) $((DISK_QUOTA_MB*1024)) 0 0 /
+log "Disk quota set to ${DISK_QUOTA_MB}MB"
+
+# ==============================================================================
 # DIRECTORIES
-# ==================================================
+# ==============================================================================
 mkdir -p "$WEBROOT"/{public_html,logs,tmp}
 chown -R "$USERNAME:$USERNAME" "$WEBROOT"
 chmod 750 "$WEBROOT"
 
 cat > "$WEBROOT/public_html/index.php" <<EOF
 <?php
-echo "Host $DOMAIN is ready ✅";
+echo "🚀 $DOMAIN is ready";
 EOF
 
 chown "$USERNAME:$USERNAME" "$WEBROOT/public_html/index.php"
 
-# ==================================================
-# PHP-FPM POOL (ISOLATED)
-# ==================================================
+# ==============================================================================
+# PHP-FPM POOL
+# ==============================================================================
 cat > /etc/php/${PHP_VERSION}/fpm/pool.d/${USERNAME}.conf <<EOF
-[$POOL_NAME]
+[$USERNAME]
 user = $USERNAME
 group = $USERNAME
 
@@ -140,20 +142,23 @@ php_admin_value[session.save_path] = $WEBROOT/tmp
 EOF
 
 systemctl reload php${PHP_VERSION}-fpm
+log "PHP-FPM pool created"
 
-# ==================================================
+# ==============================================================================
 # DATABASE
-# ==================================================
+# ==============================================================================
 mysql <<MYSQL
-CREATE DATABASE $DB_NAME;
+CREATE DATABASE \`$DB_NAME\`;
 CREATE USER '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASS';
-GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';
+GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'localhost';
 FLUSH PRIVILEGES;
 MYSQL
 
-# ==================================================
-# NGINX VHOST
-# ==================================================
+log "Database created"
+
+# ==============================================================================
+# NGINX
+# ==============================================================================
 cat > /etc/nginx/sites-available/$DOMAIN <<EOF
 server {
     listen 80;
@@ -182,29 +187,37 @@ EOF
 
 ln -s /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/$DOMAIN
 nginx -t && systemctl reload nginx
+log "Nginx vhost created"
 
-# ==================================================
+# ==============================================================================
 # SSL
-# ==================================================
-certbot --nginx \
-  -d "$DOMAIN" -d "www.$DOMAIN" \
+# ==============================================================================
+certbot --nginx -d "$DOMAIN" -d "www.$DOMAIN" \
   --agree-tos -m "$EMAIL" --redirect --non-interactive
 
-# ==================================================
-# REPORT
-# ==================================================
+log "SSL enabled"
+
+# ==============================================================================
+# WHM-LIKE REPORT
+# ==============================================================================
 cat <<EOF
 
-=====================================
- HOST CREATED SUCCESSFULLY 🎉
-=====================================
-Domain     : $DOMAIN
-User       : $USERNAME
-Web Root   : $WEBROOT
-DB Name    : $DB_NAME
-DB User    : $DB_USER
-DB Pass    : $DB_PASS
-PHP Socket : $SOCKET
-=====================================
+══════════════════════════════════════
+ 🎛  HOST ACCOUNT SUMMARY (WHM STYLE)
+══════════════════════════════════════
+Domain        : $DOMAIN
+System User   : $USERNAME
+Home Dir      : $WEBROOT
+Disk Quota    : ${DISK_QUOTA_MB} MB
+PHP Version   : $PHP_VERSION
+PHP Socket    : $SOCKET
+Web Server    : Nginx
+SSL           : Enabled (Let's Encrypt)
+***************************************
+MySQL Host    : localhost
+Database Name : $DB_NAME
+DB User       : $DB_USER
+DB Password   : $DB_PASS
+══════════════════════════════════════
 
 EOF
