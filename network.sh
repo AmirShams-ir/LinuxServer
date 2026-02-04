@@ -149,19 +149,22 @@ resolvectl status
 # --------------------------------------------------
 # DNS A RECORD CHECK
 # --------------------------------------------------
-log "Validating DNS A record"
+log "Validating DNS A record for $FQDN"
 
-SERVER_IP=$(curl -fsSL https://api.ipify.org || true)
-DNS_IP=$(dig +short "$FQDN" A | head -n1 || true)
+SERVER_IP=$(curl -fsSL https://api.ipify.org)
+DNS_IP=$(dig +short "$FQDN" A | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n1)
 
-if [[ -n "$SERVER_IP" && "$SERVER_IP" != "$DNS_IP" ]]; then
-  warn "A record mismatch"
-  echo "Server IP: $SERVER_IP"
-  echo "DNS IP   : ${DNS_IP:-NOT FOUND}"
-  die "Fix DNS first"
+if [[ "$SERVER_IP" != "$DNS_IP" ]]; then
+  warn "DNS A record mismatch"
+  echo " Expected IP : $SERVER_IP"
+  echo " DNS IP      : ${DNS_IP:-NOT FOUND}"
+  echo
+  echo "👉 Please set DNS A record:"
+  echo "   $FQDN  →  $SERVER_IP"
+  die "Fix DNS first, then re-run the script"
 fi
 
-log "DNS record OK"
+log "DNS A record verified successfully"
 
 # --------------------------------------------------
 # SSL (Certbot)
@@ -169,15 +172,23 @@ log "DNS record OK"
 log "Installing Certbot"
 apt-get install -y certbot
 
-log "Issuing SSL certificate"
+if systemctl is-active --quiet lsws; then
+  systemctl stop lsws
+  NEED_LSWS_RESTART=1
+fi
+
+log "Issuing SSL certificate for $FQDN"
 certbot certonly \
   --standalone \
-  --non-interactive \
+  --preferred-challenges http \
   --agree-tos \
+  --non-interactive \
   -m "$ADMIN_EMAIL" \
   -d "$FQDN"
 
-log "SSL ready"
+[[ "${NEED_LSWS_RESTART:-0}" == "1" ]] && systemctl start lsws
+
+log "SSL certificate issued successfully"
 
 # --------------------------------------------------
 # NETWORK MONITOR (LOW RESOURCE)
@@ -187,6 +198,8 @@ apt-get install -y vnstat
 
 systemctl enable vnstat
 systemctl start vnstat
+
+log "Network Monitor Installed successfully"
 
 # --------------------------------------------------
 # CLEANUP
