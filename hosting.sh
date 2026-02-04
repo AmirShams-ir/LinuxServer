@@ -25,9 +25,9 @@ if touch "$LOG" &>/dev/null; then
   echo "[*] Logging enabled: $LOG"
 fi
 
-echo -e "\e[1;33m══════════════════════════════════════════════════\e[0m"
-echo -e " \e[1;33m✔ Hosting Setup Script Started\e[0m"
-echo -e "\e[1;33m══════════════════════════════════════════════════\e[0m"
+echo -e "\e[1;36m══════════════════════════════════════════\e[0m"
+echo -e " \e[1;32m✔ Hosting Setup Script Started\e[0m"
+echo -e "\e[1;36m══════════════════════════════════════════\e[0m"
 
 # --------------------------------------------------
 # Root / sudo handling
