@@ -18,6 +18,26 @@
 
 set -euo pipefail
 
+# --------------------------------------------------
+# Root / sudo handling
+# --------------------------------------------------
+if [[ "$EUID" -ne 0 ]]; then
+  if command -v sudo >/dev/null 2>&1; then
+    exec sudo bash "$0" "$@"
+  else
+    echo "ERROR: Root privileges required."
+    exit 1
+  fi
+fi
+
+# --------------------------------------------------
+# OS validation
+# --------------------------------------------------
+if ! grep -Eqi '^(ID=(ubuntu|debian)|ID_LIKE=.*(debian|ubuntu))' /etc/os-release; then
+  echo "ERROR: Debian/Ubuntu only."
+  exit 1
+fi
+
 # ==================================================
 # CONFIG
 # ==================================================
@@ -29,14 +49,6 @@ exec > >(tee -a "$LOG") 2>&1
 
 log() { echo -e "\e[32m[✔] $1\e[0m"; }
 die() { echo -e "\e[31m[✖] $1\e[0m"; exit 1; }
-
-[[ $EUID -eq 0 ]] || die "Run as root"
-export DEBIAN_FRONTEND=noninteractive
-
-# ==================================================
-# OS CHECK
-# ==================================================
-grep -Eq 'debian|ubuntu' /etc/os-release || die "Only Debian/Ubuntu supported"
 
 # ==================================================
 # BASE SYSTEM
