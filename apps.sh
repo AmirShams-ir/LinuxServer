@@ -19,6 +19,19 @@
 set -euo pipefail
 
 # --------------------------------------------------
+# Logging
+# --------------------------------------------------
+LOG="/var/log/server-apps.log"
+if touch "$LOG" &>/dev/null; then
+  exec > >(tee -a "$LOG") 2>&1
+  echo "[*] Logging enabled: $LOG"
+fi
+
+echo -e "\e[1;36m══════════════════════════════════════════\e[0m"
+echo -e " \e[1;32m✔ Application Setup Script Started\e[0m"
+echo -e "\e[1;36m══════════════════════════════════════════\e[0m"
+
+# --------------------------------------------------
 # Root / sudo handling
 # --------------------------------------------------
 if [[ "$EUID" -ne 0 ]]; then
