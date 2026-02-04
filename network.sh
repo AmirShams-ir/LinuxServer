@@ -107,7 +107,7 @@ apt-get install -y \
 # --------------------------------------------------
 log "Configuring DNS (systemd-resolved)"
 
-cat >> /etc/systemd/resolved.conf <<EOF
+cat > /etc/systemd/resolved.conf <<EOF
 [Resolve]
 DNS=${DNS_MAIN1} ${DNS_MAIN3} ${DNS_MAIN5} ${DNS_LOCAL1} ${DNS_LOCAL3} ${DNS_LOCAL5} ${DNS_LOCAL7}
 FallbackDNS=${DNS_MAIN2} ${DNS_MAIN4} ${DNS_MAIN6} ${DNS_LOCAL2} ${DNS_LOCAL4} ${DNS_LOCAL6} ${DNS_LOCAL8}
@@ -116,7 +116,7 @@ DNSSEC=no
 Cache=yes
 EOF
 
-cat >> /etc/resolv.conf <<EOF
+cat > /etc/resolv.conf <<EOF
 nameserver ${DNS_MAIN1}
 nameserver ${DNS_MAIN2}
 nameserver ${DNS_MAIN3}
