@@ -65,6 +65,23 @@ echo -e "\e[1;36m═════════════════════
 VG_LV_PATH="/dev/mapper/ptr--vg-root"
 
 # ==============================================================================
+# Required disk tools (idempotent)
+# ==============================================================================
+log "Checking required disk tools..."
+
+REQUIRED_PKGS=(parted cloud-guest-utils lvm2)
+
+for pkg in "${REQUIRED_PKGS[@]}"; do
+  if ! dpkg -s "$pkg" >/dev/null 2>&1; then
+    log "Installing $pkg..."
+    apt-get update -qq
+    apt-get install -y "$pkg"
+  else
+    log "$pkg already installed"
+  fi
+done
+
+# ==============================================================================
 # Disk expansion (ONLY for fresh VPS layouts)
 # ==============================================================================
 
