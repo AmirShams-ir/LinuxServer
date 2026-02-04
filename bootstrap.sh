@@ -27,9 +27,9 @@ if touch "$LOG" &>/dev/null; then
   echo "[*] Logging enabled: $LOG"
 fi
 
-echo -e "\e[1;33m══════════════════════════════════════════════════\e[0m"
+echo -e "\e[1;33m═══════════════════════════════════════════\e[0m"
 echo -e " \e[1;33m✔ Bootstrap Script Started\e[0m"
-echo -e "\e[1;33m══════════════════════════════════════════════════\e[0m"
+echo -e "\e[1;33m═══════════════════════════════════════════\e[0m"
 
 # --------------------------------------------------
 # Root / sudo handling
@@ -42,6 +42,14 @@ if [[ "$EUID" -ne 0 ]]; then
     echo "Error: Root privileges required."
     exit 1
   fi
+fi
+
+# --------------------------------------------------
+# OS validation
+# --------------------------------------------------
+if ! grep -Eqi '^(ID=(ubuntu|debian)|ID_LIKE=.*(debian|ubuntu))' /etc/os-release; then
+  echo "ERROR: Debian/Ubuntu only."
+  exit 1
 fi
 
 # --------------------------------------------------
