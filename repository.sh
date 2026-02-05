@@ -109,7 +109,7 @@ EOF
 deb http://repo.iut.ac.ir/debian $CODENAME $COMPONENTS
 deb http://repo.iut.ac.ir/debian $CODENAME-updates $COMPONENTS
 deb http://mirror.arvancloud.ir/debian $CODENAME $COMPONENTS
-deb http://mirror.arvancloud.ir/debian $CODENAME-security $COMPONENTS
+deb http://mirror.arvancloud.ir/debian-security $CODENAME-security $COMPONENTS
 EOF
 
 # --------------------------------------------------
