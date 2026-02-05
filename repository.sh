@@ -219,7 +219,7 @@ echo -e "\e[1;36m═════════════════════
 echo -e "\e[1;33mAPT repository configuration completed\e[0m"
 echo -e "\e[1;33mOS       : $PRETTY\e[0m"
 echo -e "\e[1;33mPrimary  : Official repositories\e[0m"
-echo -e "\e[1;33mFallback : repo.iut.ac.ir (IR)\e[0m"
+echo -e "\e[1;33mFallback : Mirror repositories (IR)\e[0m"
 echo -e "\e[1;36m══════════════════════════════════════════════\e[0m"
 
 echo
