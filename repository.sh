@@ -107,7 +107,33 @@ EOF
   cat > "$IR_LIST" <<EOF
 # Iranian fallback mirror
 deb http://repo.iut.ac.ir/debian $CODENAME $COMPONENTS
+deb http://repo.iut.ac.ir/debian $CODENAME-updates $COMPONENTS
+deb http://mirror.arvancloud.ir/debian $CODENAME $COMPONENTS
+deb http://mirror.arvancloud.ir/debian $CODENAME-security $COMPONENTS
 EOF
+
+# --------------------------------------------------
+# Debian APT pinning (Official > Iranian)
+# --------------------------------------------------
+cat > "$PIN_FILE" <<EOF
+Package: *
+Pin: origin deb.debian.org
+Pin-Priority: 900
+
+Package: *
+Pin: origin security.debian.org
+Pin-Priority: 900
+
+Package: *
+Pin: origin repo.iut.ac.ir
+Pin-Priority: 100
+
+Package: *
+Pin: origin mirror.arvancloud.ir
+Pin-Priority: 100
+EOF
+
+echo "[OK] APT pinning rules applied."
 
 # --------------------------------------------------
 # Ubuntu
@@ -139,24 +165,16 @@ EOF
   cat > "$IR_LIST" <<EOF
 # Iranian fallback mirror
 deb http://repo.iut.ac.ir/ubuntu $CODENAME main restricted universe multiverse
+deb http://repo.iut.ac.ir/ubuntu $CODENAME-updates main restricted universe multiverse
+deb http://repo.iut.ac.ir/ubuntu $CODENAME-security main restricted universe multiverse
+deb http://mirror.arvancloud.ir/ubuntu $CODENAME universe
 EOF
 
-else
-  echo "ERROR: Unsupported OS: $OS_ID"
-  exit 1
-fi
-
 # --------------------------------------------------
-# APT pinning (Official > Iranian)
+# Ubuntu APT pinning (Official > Iranian)
 # --------------------------------------------------
 cat > "$PIN_FILE" <<EOF
 Package: *
-Pin: origin deb.debian.org
-Pin-Priority: 900
-
-Package: *
-Pin: origin security.debian.org
-Pin-Priority: 900
 
 Package: *
 Pin: origin archive.ubuntu.com
@@ -169,9 +187,18 @@ Pin-Priority: 900
 Package: *
 Pin: origin repo.iut.ac.ir
 Pin-Priority: 100
+
+Package: *
+Pin: origin mirror.arvancloud.ir
+Pin-Priority: 100
 EOF
 
 echo "[OK] APT pinning rules applied."
+
+else
+  echo "ERROR: Unsupported OS: $OS_ID"
+  exit 1
+fi
 
 # --------------------------------------------------
 # Refresh CA & APT (script-safe)
