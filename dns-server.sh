@@ -150,15 +150,11 @@ ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
 # ==============================================================================
 # CLEANUP
 # ==============================================================================
-log "Cleanup"
-
-# Clear apt cache safely
 if command -v apt-get >/dev/null 2>&1; then
   apt-get autoremove -y >/dev/null 2>&1 || true
   apt-get autoclean  -y >/dev/null 2>&1 || true
 fi
 
-# Unset sensitive / temporary variables
 unset INTL_DNS
 unset IR_DNS
 unset RESULTS
