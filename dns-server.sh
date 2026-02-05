@@ -60,9 +60,9 @@ echo -e "\e[1;36m═════════════════════
 
 # International DNS 
 INTL_DNS=(
-  "1.1.1.1"        # Cloudflare
-  "9.9.9.9"        # Quad9
-  "8.8.8.8"        # Google
+  "1.1.1.1"        
+  "9.9.9.9"        
+  "8.8.8.8"        
   "1.0.0.1"
   "149.112.112.112"
   "4.2.2.4"
@@ -126,9 +126,9 @@ log "Selected primary DNS: $PRIMARY_DNS"
 log "Fallback DNS (Iran): ${IR_DNS[*]}"
 
 # ==============================================================================
-# APPLY systemd-resolved CONFIG (OVERRIDE DHCP)
+# APPLY systemd-resolved CONFIG
 # ==============================================================================
-log "Configuring systemd-resolved (authoritative override)"
+log "Configuring systemd-resolved (hard authoritative override)"
 
 mkdir -p /etc/systemd/resolved.conf.d
 
@@ -144,6 +144,11 @@ EOF
 systemctl enable systemd-resolved >/dev/null 2>&1 || true
 systemctl restart systemd-resolved
 resolvectl flush-caches
+
+# ---- HARD FIX: prevent DHCP / legacy DNS injection ----
+resolvectl revert eth0 || true
+resolvectl dns eth0 $PRIMARY_DNS
+resolvectl domain eth0 ~.
 
 ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
 
