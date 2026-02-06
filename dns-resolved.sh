@@ -47,7 +47,7 @@ exec > >(tee -a "$LOG") 2>&1
 # Banner
 # ==============================================================================
 echo -e "\e[1;36m═══════════════════════════════════════════\e[0m"
-echo -e " \e[1;33m✔ DNS Server Script Started\e[0m"
+echo -e " \e[1;33m✔ Smart DNS Server Script Started\e[0m"
 echo -e "\e[1;36m═══════════════════════════════════════════\e[0m"
 
 # --------------------------------------------------
@@ -88,27 +88,43 @@ measure_latency() {
 }
 
 # --------------------------------------------------
-# LATENCY SORTING
+# LATENCY TESTING
 # --------------------------------------------------
-log "Testing latency for international DNS servers..."
-
 INTL_SORTED=()
+IR_SORTED=()
+
+log "Testing latency for international DNS servers..."
 for dns in "${INTL_DNS[@]}"; do
   lat=$(measure_latency "$dns")
-  [[ -n "$lat" ]] && INTL_SORTED+=("$lat:$dns") && echo "  ✔ $dns → ${lat} ms"
+  if [[ -n "$lat" ]]; then
+    INTL_SORTED+=("$lat:$dns")
+    echo "  ✔ $dns → ${lat} ms"
+  fi
 done
 
 log "Testing latency for Iranian DNS servers..."
-IR_SORTED=()
 for dns in "${IR_DNS[@]}"; do
   lat=$(measure_latency "$dns")
-  [[ -n "$lat" ]] && IR_SORTED+=("$lat:$dns") && echo "  ✔ $dns → ${lat} ms"
+  if [[ -n "$lat" ]]; then
+    IR_SORTED+=("$lat:$dns")
+    echo "  ✔ $dns → ${lat} ms"
+  fi
 done
 
-DNS_PRIMARY=$(printf "%s\n" "${INTL_SORTED[@]}" | sort -n | cut -d: -f2 | tr '\n' ' ')
-DNS_FALLBACK=$(printf "%s\n" "${IR_SORTED[@]}"   | sort -n | cut -d: -f2 | tr '\n' ' ')
+# --------------------------------------------------
+# DECISION LOGIC (National Internet Aware)
+# --------------------------------------------------
+if [[ "${#INTL_SORTED[@]}" -gt 0 ]]; then
+  log "International connectivity detected"
+  DNS_PRIMARY=$(printf "%s\n" "${INTL_SORTED[@]}" | sort -n | cut -d: -f2 | tr '\n' ' ')
+  DNS_FALLBACK=$(printf "%s\n" "${IR_SORTED[@]}"   | sort -n | cut -d: -f2 | tr '\n' ' ')
+else
+  warn "International DNS unreachable (national internet mode)"
+  DNS_PRIMARY=$(printf "%s\n" "${IR_SORTED[@]}"   | sort -n | cut -d: -f2 | tr '\n' ' ')
+  DNS_FALLBACK=$(printf "%s\n" "${INTL_DNS[@]}"   | tr '\n' ' ')
+fi
 
-[[ -z "$DNS_PRIMARY" ]] && die "No international DNS responded."
+[[ -z "$DNS_PRIMARY" ]] && die "No usable DNS servers detected."
 
 # --------------------------------------------------
 # DNS CONFIG (SAFE MODE)
@@ -120,7 +136,7 @@ if systemctl list-unit-files | grep -q '^systemd-resolved\.service'; then
 
   mkdir -p /etc/systemd/resolved.conf.d
 
-  cat > /etc/systemd/resolved.conf.d/10-latency-dns.conf <<EOF
+  cat > /etc/systemd/resolved.conf.d/10-smart-dns.conf <<EOF
 [Resolve]
 DNS=${DNS_PRIMARY}
 FallbackDNS=${DNS_FALLBACK}
@@ -133,7 +149,7 @@ EOF
   systemctl restart systemd-resolved
   resolvectl flush-caches
 
-  # ---- HARD LINK OVERRIDE (prevent DHCP DNS injection) ----
+  # ---- HARD LINK OVERRIDE ----
   resolvectl revert eth0 || true
   resolvectl dns eth0 $DNS_PRIMARY
   resolvectl domain eth0 ~.
@@ -141,13 +157,15 @@ EOF
   ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
 
 else
-  log "systemd-resolved not found, falling back to /etc/resolv.conf"
+  log "systemd-resolved not found, using /etc/resolv.conf"
 
   cat > /etc/resolv.conf <<EOF
 $(for d in $DNS_PRIMARY $DNS_FALLBACK; do echo "nameserver $d"; done)
 options edns0
 EOF
 fi
+
+log "DNS configured successfully"
 
 # --------------------------------------------------
 # CLEANUP
