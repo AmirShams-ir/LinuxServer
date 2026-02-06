@@ -178,7 +178,7 @@ unset INTL_DNS IR_DNS INTL_SORTED IR_SORTED DNS_PRIMARY DNS_FALLBACK
 # ==================================================
 echo
 echo -e "\e[1;36m══════════════════════════════════════════════\e[0m"
-echo -e "\e[1;32m ✔ DNS-Server    : OK\e[0m"
+echo -e "\e[1;32m ✔ Smart DNS Server Resolver : Installed\e[0m"
 echo -e "\e[1;36m══════════════════════════════════════════════\e[0m"
 echo
 resolvectl status
