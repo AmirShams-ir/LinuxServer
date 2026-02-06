@@ -147,7 +147,7 @@ DNSSEC=no
 Cache=yes
 EOF
 
-  systemctl enable systemd-resolved >/dev/null 2>&1 || true
+  systemctl enable systemd-resolved
   systemctl restart systemd-resolved
   resolvectl flush-caches
 
