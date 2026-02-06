@@ -84,7 +84,7 @@ die()  { echo -e "\e[31m[✖] $1\e[0m"; exit 1; }
 
 measure_latency() {
   ping -c1 -W"$PING_TIMEOUT" "$1" 2>/dev/null \
-    | awk -F'/' 'END {print $5}'
+    | awk -F'/' 'END {print $5}' || true
 }
 
 # --------------------------------------------------
@@ -112,7 +112,7 @@ for dns in "${IR_DNS[@]}"; do
 done
 
 # --------------------------------------------------
-# DECISION LOGIC (National Internet Aware)
+# DECISION LOGIC
 # --------------------------------------------------
 if [[ "${#INTL_SORTED[@]}" -gt 0 ]]; then
   log "International connectivity detected"
@@ -132,8 +132,6 @@ fi
 log "Configuring system DNS resolver"
 
 if systemctl list-unit-files | grep -q '^systemd-resolved\.service'; then
-  log "systemd-resolved detected"
-
   mkdir -p /etc/systemd/resolved.conf.d
 
   cat > /etc/systemd/resolved.conf.d/10-smart-dns.conf <<EOF
@@ -149,16 +147,12 @@ EOF
   systemctl restart systemd-resolved
   resolvectl flush-caches
 
-  # ---- HARD LINK OVERRIDE ----
   resolvectl revert eth0 || true
   resolvectl dns eth0 $DNS_PRIMARY
   resolvectl domain eth0 ~.
 
   ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
-
 else
-  log "systemd-resolved not found, using /etc/resolv.conf"
-
   cat > /etc/resolv.conf <<EOF
 $(for d in $DNS_PRIMARY $DNS_FALLBACK; do echo "nameserver $d"; done)
 options edns0
