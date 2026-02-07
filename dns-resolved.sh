@@ -147,10 +147,6 @@ DNSSEC=no
 Cache=yes
 EOF
 
-  systemctl enable systemd-resolved
-  systemctl restart systemd-resolved
-  resolvectl flush-caches
-
   resolvectl revert eth0 || true
   resolvectl dns eth0 $DNS_PRIMARY
   resolvectl domain eth0 ~.
@@ -163,6 +159,10 @@ options edns0
 EOF
 fi
 
+  systemctl enable systemd-resolved
+  systemctl restart systemd-resolved
+  resolvectl flush-caches
+  
 log "DNS configured successfully"
 
 # --------------------------------------------------
