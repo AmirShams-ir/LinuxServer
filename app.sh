@@ -211,19 +211,6 @@ ufw allow 'Nginx Full'
 ufw --force enable
 
 # ==============================================================================
-# FINAL REPORT
-# ==============================================================================
-echo -e "\n\e[1;36m══════════════════════════════════════════════\e[0m"
-echo -e " ✔ OS         : $PRETTY_NAME"
-echo -e " ✔ PHP        : $PHP_VERSION ($PHP_SOURCE)"
-echo -e " ✔ PHP-FPM    : $PHP_SOCK"
-echo -e " ✔ Nginx      : Installed"
-echo -e " ✔ MariaDB    : Installed"
-echo -e " ✔ phpMyAdmin : /phpmyadmin"
-echo -e " ✔ SSL        : Enabled"
-echo -e "\e[1;36m══════════════════════════════════════════════\e[0m"
-
-# ==============================================================================
 # CLEANUP
 # ==============================================================================
 apt autoremove -y --purge
@@ -232,18 +219,29 @@ apt clean
 rm -rf /tmp/*
 rm -rf /var/tmp/*
 journalctl --vacuum-time=7d || true
-
 if [[ -d /var/lib/php/sessions ]]; then
-  log "Cleaning old PHP session files"
   find /var/lib/php/sessions -type f -mtime +2 -delete
 fi
-
-unset HISTFILE
 rm -f /root/.bash_history
 history -c || true
 chown -R www-data:www-data /var/www
 find /var/www -type d -exec chmod 755 {} \;
 find /var/www -type f -exec chmod 644 {} \;
 sync
-unset PRETTY_NAME PHP_VERSION PHP_SOURCE PHP_SOCK
+
 log "Cleanup completed ✅"
+
+# ==============================================================================
+# FINAL REPORT
+# ==============================================================================
+echo -e "\n\e[1;36m══════════════════════════════════════════════\e[0m"
+echo -e " \e[1;32m✔ OS         : $PRETTY_NAME\e[0m"
+echo -e " \e[1;32m✔ PHP        : $PHP_VERSION ($PHP_SOURCE)\e[0m"
+echo -e " \e[1;32m✔ PHP-FPM    : $PHP_SOCK\e[0m"
+echo -e " \e[1;32m✔ Nginx      : Installed\e[0m"
+echo -e " \e[1;32m✔ MariaDB    : Installed\e[0m"
+echo -e " \e[1;32m✔ phpMyAdmin : /phpmyadmin\e[0m"
+echo -e " \e[1;32m✔ SSL        : Enabled\e[0m"
+echo -e "\e[1;36m══════════════════════════════════════════════\e[0m"
+
+unset HISTFILE PRETTY_NAME PHP_VERSION PHP_SOURCE PHP_SOCK
