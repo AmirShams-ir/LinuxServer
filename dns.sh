@@ -27,7 +27,11 @@ fi
 # ==============================================================================
 # OS detection
 # ==============================================================================
-source /etc/os-release
+if [[ ! -f /etc/os-release ]] || \
+   ! grep -Eqi '^(ID=(debian|ubuntu)|ID_LIKE=.*(debian|ubuntu))' /etc/os-release; then
+  echo "❌ ERROR: Unsupported OS. Debian/Ubuntu only."
+  exit 1
+fi
 
 IS_UBUNTU=false
 IS_DEBIAN=false
