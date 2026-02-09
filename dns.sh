@@ -140,7 +140,7 @@ log "DNS configured successfully"
 # ==============================================================================
 apt-get autoremove -y
 apt-get autoclean -y
-unset INTL_DNS IR_DNS INTL_SORTED IR_SORTED DNS_PRIMARY DNS_FALLBACK
+unset INTL_DNS IR_DNS INTL_SORTED IR_SORTED DNS_PRIMARY DNS_FALLBACK IS_UBUNTU IS_DEBIAN
 log "Cleanup successfully"
 
 # ==============================================================================
