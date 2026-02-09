@@ -278,28 +278,13 @@ ufw --force enable
 # PHP REPORT
 # ==================================================
 echo
-echo "========================================"
-echo " PHP INSTALLATION COMPLETED 🎉"
-echo " OS        : $PRETTY_NAME"
-echo " PHP       : $PHP_VERSION"
-echo " Source    : $PHP_SOURCE"
-echo " FPM Sock  : /run/php/php${PHP_VERSION}-fpm.sock"
-echo "========================================"
+echo -e "\e[1;36m══════════════════════════════════════════════════\e[0m"
+echo -e " \e[1;32m✔ PHP INSTALLATION COMPLETED 🎉\e[0m"
+echo -e " \e[1;32m✔ OS        : $PRETTY_NAME\e[0m"
+echo -e " \e[1;32m✔ PHP       : $PHP_VERSION\e[0m"
+echo -e " \e[1;32m✔ Source    : $PHP_SOURCE\e[0m"
+echo -e " \e[1;32m✔ FPM Sock  : /run/php/php${PHP_VERSION}-fpm.sock\e[0m"
+echo -e "\e[1;36m══════════════════════════════════════════════════\e[0m"
 
 unset DOMAIN WEBROOT
 unset PHP_INI PHP_SOURCE PHP_VERSION PRETTY_NAME CODENAME
-
-
-# ==================================================
-# FINAL REPORT
-# ==================================================
-echo
-echo -e "\e[1;36m══════════════════════════════════════════════════\e[0m"
-echo -e " \e[1;32m✔ Nginx        : Installed\e[0m"
-echo -e " \e[1;32m✔ MariaDB      : Installed\e[0m"
-echo -e " \e[1;32m✔ PHP-FPM      : Installed\e[0m"
-echo -e " \e[1;32m✔ PHP-MyAdmin  : Ready\e[0m"
-echo -e " \e[1;32m✔ Certbot      : Ready\e[0m"
-echo -e " \e[1;32m✔ Firewall     : Enabled\e[0m"
-echo -e "\e[1;36m══════════════════════════════════════════════════\e[0m"
-echo
