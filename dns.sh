@@ -13,10 +13,6 @@
 # Note: This script is designed to be SAFE, IDEMPOTENT, and NON-DESTRUCTIVE.
 #       Review before use. No application-level services are installed here.
 # -----------------------------------------------------------------------------
-#!/usr/bin/env bash
-# -----------------------------------------------------------------------------
-# Smart DNS Resolver (Debian 12/13 + Ubuntu 22.04/24.04)
-# -----------------------------------------------------------------------------
 
 set -Eeuo pipefail
 
