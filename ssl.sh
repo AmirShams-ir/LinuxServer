@@ -111,7 +111,7 @@ if [[ "$SERVER_IP" != "$DNS_IP" ]]; then
   die "Fix DNS first, then re-run the script"
 fi
 
-log "✔ DNS A record verified successfully"
+log "DNS A record verified successfully"
 
 # --------------------------------------------------
 # SSL (Certbot)
@@ -135,7 +135,7 @@ certbot certonly \
 
 [[ "${NEED_LSWS_RESTART:-0}" == "1" ]] && systemctl start lsws
 
-log "✔ SSL certificate issued successfully"
+log "SSL certificate issued successfully"
 
 # --------------------------------------------------
 # NETWORK MONITOR (LOW RESOURCE)
@@ -149,7 +149,7 @@ systemctl start vnstat
 apt-get autoremove -y
 apt-get autoclean -y
 
-log "✔ Network Monitor Installed successfully"
+log "Network Monitor Installed successfully"
 
 # ==================================================
 # FINAL REPORT
@@ -166,7 +166,5 @@ echo
 # CLEAN EXIT
 # ==================================================
 unset TIMEZONE
-unset DNS_MAIN1 DNS_MAIN2 DNS_MAIN3 DNS_MAIN4 DNS_MAIN5 DNS_MAIN6
-unset DNS_LOCAL1 DNS_LOCAL2 DNS_LOCAL3 DNS_LOCAL4 DNS_LOCAL5 DNS_LOCAL6 DNS_LOCAL7 DNS_LOCAL8
 unset HOSTNAME DOMAIN FQDN ADMIN_EMAIL
 unset SERVER_IP DNS_IP DEBIAN_FRONTEND
