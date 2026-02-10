@@ -255,6 +255,8 @@ title "🚀 Create Hosting Account"
   echo "$USERNAME:$PASSWORD" | chpasswd
   ok "System user created"
 
+  detect_services
+  
   enable_quota
   
 # Setquota
@@ -352,11 +354,13 @@ delete_host() {
   rm -f /etc/nginx/sites-enabled/$DOMAIN
   rm -f /etc/nginx/sites-available/$DOMAIN
 
+  detect_services
+
   mariadb <<EOF
-DROP DATABASE IF EXISTS db_$USERNAME;
-DROP USER IF EXISTS 'u_$USERNAME'@'localhost';
-FLUSH PRIVILEGES;
-EOF
+  DROP DATABASE IF EXISTS db_$USERNAME;
+  DROP USER IF EXISTS 'u_$USERNAME'@'localhost';
+  FLUSH PRIVILEGES;
+  EOF
 
   userdel -r "$USERNAME" &>/dev/null || true
 
