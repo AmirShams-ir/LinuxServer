@@ -115,34 +115,38 @@ auto_install() {
 }
 
 # ==============================================================================
-# Detect services
+# Detect services (SAFE with set -e)
 # ==============================================================================
 detect_services() {
 
   # ---------------- PHP ----------------
-  PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null) \
-    || echo "PHP is not installed"
+  if ! command -v php >/dev/null 2>&1; then
+    die "PHP is not installed"
+  fi
+
+  PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
+  ok "PHP detected: $PHP_VERSION"
 
   PHP_FPM_SERVICE=$(systemctl list-units --type=service --state=running \
     | awk '/php.*fpm/ {print $1; exit}')
 
-  [[ -n "$PHP_FPM_SERVICE" ]] || die "PHP-FPM service is not running"
+  if [[ -z "$PHP_FPM_SERVICE" ]]; then
+    die "PHP-FPM service is not running"
+  fi
 
-  ok "PHP detected: $PHP_VERSION"
   ok "PHP-FPM service: $PHP_FPM_SERVICE"
 
   # ---------------- MariaDB ----------------
-  command -v mariadb >/dev/null 2>&1 || echo "MariaDB client not installed"
+  if ! command -v mariadb >/dev/null 2>&1; then
+    die "MariaDB client is not installed"
+  fi
 
-  MARIADB_SERVICE=$(systemctl list-units --type=service --state=running \
-    | awk '/mariadb\.service/ {print $1}')
-
-  [[ -n "$MARIADB_SERVICE" ]] || echo "MariaDB service is not running"
+  if ! systemctl is-active --quiet mariadb; then
+    die "MariaDB service is not running"
+  fi
 
   MARIADB_VERSION=$(mariadb --version | awk '{print $5}')
-
   ok "MariaDB detected: $MARIADB_VERSION"
-  ok "MariaDB service is running"
 
   # ---------------- phpMyAdmin ----------------
   PHPMYADMIN_PATH=""
@@ -153,10 +157,15 @@ detect_services() {
     /var/www/phpmyadmin \
     /var/www/html/phpmyadmin
   do
-    [[ -d "$p" ]] && PHPMYADMIN_PATH="$p" && break
+    if [[ -d "$p" ]]; then
+      PHPMYADMIN_PATH="$p"
+      break
+    fi
   done
 
-  [[ -n "$PHPMYADMIN_PATH" ]] || echo "phpMyAdmin is not installed"
+  if [[ -z "$PHPMYADMIN_PATH" ]]; then
+    die "phpMyAdmin is not installed"
+  fi
 
   ok "phpMyAdmin detected at: $PHPMYADMIN_PATH"
 }
