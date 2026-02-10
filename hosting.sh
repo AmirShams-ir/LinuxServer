@@ -57,167 +57,156 @@ echo -e "\e[1;36m═════════════════════
 echo -e " \e[1;33m✔ Hosting Script Started\e[0m"
 echo -e "\e[1;36m═══════════════════════════════════════════\e[0m"
 
-# ==============================================================================
-# CONFIG
-# ==============================================================================
-PHP_VERSION="8.3"
+# ------------------------------------------------------------------------------
+# Globals
+# ------------------------------------------------------------------------------
 BASE_DIR="/var/www"
-LOG="/var/log/create-host.log"
-DISK_QUOTA_MB=1024
+DIALOG=dialog
 
-exec > >(tee -a "$LOG") 2>&1
+log() { echo "[✔] $*"; }
+die() { echo "[✖] $*" ; exit 1; }
 
-log()  { echo -e "\e[32m[✔] $1\e[0m"; }
-warn() { echo -e "\e[33m[!] $1\e[0m"; }
-die()  { echo -e "\e[31m[✖] $1\e[0m"; exit 1; }
+# ------------------------------------------------------------------------------
+# Detect services
+# ------------------------------------------------------------------------------
+PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null) \
+  || die "PHP not installed"
 
-# ==============================================================================
-# INPUT
-# ==============================================================================
-echo "=== CREATE NEW HOST ==="
+PHP_FPM_SERVICE=$(systemctl list-units --type=service --state=running \
+  | awk '/php.*fpm/ {print $1; exit}')
 
-read -rp "Domain (example.com): " DOMAIN
-read -rp "Username: " USERNAME
-read -rsp "Password: " PASSWORD; echo
-read -rp "Email: " EMAIL
+[[ -n "$PHP_FPM_SERVICE" ]] || die "PHP-FPM not running"
 
-[[ -z "$DOMAIN" || -z "$USERNAME" || -z "$PASSWORD" ]] && die "Missing input"
+# ------------------------------------------------------------------------------
+# CREATE HOST
+# ------------------------------------------------------------------------------
+create_host() {
 
-WEBROOT="$BASE_DIR/$DOMAIN"
-SOCKET="/run/php/php-fpm-${USERNAME}.sock"
-DB_NAME="db_${USERNAME}"
-DB_USER="u_${USERNAME}"
-DB_PASS=$(openssl rand -base64 16)
+  DOMAIN=$($DIALOG --inputbox "Domain name" 8 40 3>&1 1>&2 2>&3)
+  USERNAME=$($DIALOG --inputbox "Username" 8 40 3>&1 1>&2 2>&3)
+  PASSWORD=$($DIALOG --passwordbox "Password" 8 40 3>&1 1>&2 2>&3)
+  EMAIL=$($DIALOG --inputbox "Admin Email (SSL)" 8 40 3>&1 1>&2 2>&3)
+  QUOTA_MB=$($DIALOG --inputbox "Disk Quota (MB)" 8 40 "1024" 3>&1 1>&2 2>&3)
 
-# ==============================================================================
-# USER
-# ==============================================================================
-id "$USERNAME" &>/dev/null && die "User already exists"
+  [[ -z "$DOMAIN" || -z "$USERNAME" || -z "$PASSWORD" ]] && return
 
-useradd -m -d "$WEBROOT" -s /bin/bash "$USERNAME"
-echo "$USERNAME:$PASSWORD" | chpasswd
-log "User created"
+  id "$USERNAME" &>/dev/null && {
+    $DIALOG --msgbox "User already exists!" 6 40
+    return
+  }
 
-# ==============================================================================
-# QUOTA (1GB)
-# ==============================================================================
-setquota -u "$USERNAME" 1048576 1048576 0 0 /
-log "Disk quota set for $USERNAME"
+  WEBROOT="$BASE_DIR/$DOMAIN"
+  SOCKET="/run/php/php-fpm-$USERNAME.sock"
+  DB_NAME="db_$USERNAME"
+  DB_USER="u_$USERNAME"
+  DB_PASS=$(openssl rand -base64 16)
 
-# ==============================================================================
-# DIRECTORIES
-# ==============================================================================
-mkdir -p "$WEBROOT"/{public_html,logs,tmp}
-chown -R "$USERNAME:$USERNAME" "$WEBROOT"
-chmod 750 "$WEBROOT"
+  # User
+  useradd -m -d "$WEBROOT" -s /bin/bash "$USERNAME"
+  echo "$USERNAME:$PASSWORD" | chpasswd
 
-cat > "$WEBROOT/public_html/index.php" <<EOF
-<?php
-echo "🚀 $DOMAIN is ready";
-EOF
+  # Quota
+  setquota -u "$USERNAME" $((QUOTA_MB*1024)) $((QUOTA_MB*1024)) 0 0 /
 
-chown "$USERNAME:$USERNAME" "$WEBROOT/public_html/index.php"
+  # Dirs
+  mkdir -p "$WEBROOT"/{public_html,logs,tmp}
+  chown -R "$USERNAME:$USERNAME" "$WEBROOT"
 
-# ==============================================================================
-# PHP-FPM POOL
-# ==============================================================================
-cat > /etc/php/${PHP_VERSION}/fpm/pool.d/${USERNAME}.conf <<EOF
+  echo "<?php phpinfo();" > "$WEBROOT/public_html/index.php"
+
+  # PHP-FPM
+  cat > /etc/php/$PHP_VERSION/fpm/pool.d/$USERNAME.conf <<EOF
 [$USERNAME]
 user = $USERNAME
 group = $USERNAME
-
 listen = $SOCKET
 listen.owner = $USERNAME
 listen.group = www-data
-listen.mode = 0660
-
 pm = ondemand
 pm.max_children = 5
-pm.process_idle_timeout = 10s
-pm.max_requests = 500
-
-php_admin_value[open_basedir] = $WEBROOT:/tmp
-php_admin_value[upload_tmp_dir] = $WEBROOT/tmp
-php_admin_value[session.save_path] = $WEBROOT/tmp
 EOF
 
-systemctl reload php${PHP_VERSION}-fpm
-log "PHP-FPM pool created"
+  systemctl reload "$PHP_FPM_SERVICE"
 
-# ==============================================================================
-# DATABASE
-# ==============================================================================
-mysql <<MYSQL
+  # DB
+  mariadb <<EOF
 CREATE DATABASE \`$DB_NAME\`;
 CREATE USER '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASS';
-GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'localhost';
+GRANT ALL ON \`$DB_NAME\`.* TO '$DB_USER'@'localhost';
 FLUSH PRIVILEGES;
-MYSQL
+EOF
 
-log "Database created"
-
-# ==============================================================================
-# NGINX
-# ==============================================================================
-cat > /etc/nginx/sites-available/$DOMAIN <<EOF
+  # Nginx
+  cat > /etc/nginx/sites-available/$DOMAIN <<EOF
 server {
-    listen 80;
-    server_name $DOMAIN www.$DOMAIN;
-
-    root $WEBROOT/public_html;
-    index index.php index.html;
-
-    access_log $WEBROOT/logs/access.log;
-    error_log  $WEBROOT/logs/error.log;
-
-    location / {
-        try_files \$uri \$uri/ /index.php?\$args;
-    }
-
-    location ~ \.php\$ {
-        include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:$SOCKET;
-    }
-
-    location ~ /\. {
-        deny all;
-    }
+  listen 80;
+  server_name $DOMAIN www.$DOMAIN;
+  root $WEBROOT/public_html;
+  index index.php index.html;
+  location ~ \.php\$ {
+    include snippets/fastcgi-php.conf;
+    fastcgi_pass unix:$SOCKET;
+  }
 }
 EOF
 
-ln -s /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/$DOMAIN
-nginx -t && systemctl reload nginx
-log "Nginx vhost created"
+  ln -s /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/$DOMAIN
+  nginx -t && systemctl reload nginx
 
-# ==============================================================================
-# SSL
-# ==============================================================================
-certbot --nginx -d "$DOMAIN" -d "www.$DOMAIN" \
-  --agree-tos -m "$EMAIL" --redirect --non-interactive
+  certbot --nginx -d "$DOMAIN" -d "www.$DOMAIN" \
+    --agree-tos -m "$EMAIL" --redirect --non-interactive
 
-log "SSL enabled"
+  $DIALOG --msgbox "Hosting created successfully 🎉
 
-# ==============================================================================
-# WHM-LIKE REPORT
-# ==============================================================================
-cat <<EOF
+Domain: $DOMAIN
+User: $USERNAME
+Quota: ${QUOTA_MB}MB
+DB Pass: $DB_PASS" 12 50
+}
 
-══════════════════════════════════════
- 🎛  HOST ACCOUNT SUMMARY (WHM STYLE)
-══════════════════════════════════════
-Domain        : $DOMAIN
-System User   : $USERNAME
-Home Dir      : $WEBROOT
-Disk Quota    : ${DISK_QUOTA_MB} MB
-PHP Version   : $PHP_VERSION
-PHP Socket    : $SOCKET
-Web Server    : Nginx
-SSL           : Enabled (Let's Encrypt)
-***************************************
-MySQL Host    : localhost
-Database Name : $DB_NAME
-DB User       : $DB_USER
-DB Password   : $DB_PASS
-══════════════════════════════════════
+# ------------------------------------------------------------------------------
+# DELETE HOST (FULL DESTROY)
+# ------------------------------------------------------------------------------
+delete_host() {
 
+  USERNAME=$($DIALOG --inputbox "Username to DELETE" 8 40 3>&1 1>&2 2>&3)
+  [[ -z "$USERNAME" ]] && return
+
+  $DIALOG --yesno "⚠️ This will COMPLETELY remove user $USERNAME\n
+Home, DB, Nginx, PHP-FPM\n\nAre you sure?" 12 50 || return
+
+  DOMAIN=$(basename "$(getent passwd "$USERNAME" | cut -d: -f6)")
+
+  rm -f /etc/nginx/sites-enabled/$DOMAIN
+  rm -f /etc/nginx/sites-available/$DOMAIN
+  rm -f /etc/php/*/fpm/pool.d/$USERNAME.conf
+
+  mariadb <<EOF
+DROP DATABASE IF EXISTS db_$USERNAME;
+DROP USER IF EXISTS 'u_$USERNAME'@'localhost';
+FLUSH PRIVILEGES;
 EOF
+
+  userdel -r "$USERNAME" || true
+  systemctl reload nginx
+  systemctl reload "$PHP_FPM_SERVICE"
+
+  $DIALOG --msgbox "User $USERNAME removed completely 🧨" 8 40
+}
+
+# ------------------------------------------------------------------------------
+# MENU
+# ------------------------------------------------------------------------------
+while true; do
+  CHOICE=$($DIALOG --menu "Mini WHM" 15 50 4 \
+    1 "Create Hosting" \
+    2 "Delete Hosting" \
+    3 "Exit" \
+    3>&1 1>&2 2>&3)
+
+  case "$CHOICE" in
+    1) create_host ;;
+    2) delete_host ;;
+    3|*) clear; exit ;;
+  esac
+done
