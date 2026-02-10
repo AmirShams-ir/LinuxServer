@@ -106,6 +106,11 @@ create_host() {
   echo "$USERNAME:$PASSWORD" | chpasswd
 
   # Quota
+  if quotaon -p / &>/dev/null; then
+  setquota -u "$USERNAME" $((QUOTA_MB*1024)) $((QUOTA_MB*1024)) 0 0 /
+  else
+  warn "Quota not enabled on /. Skipping quota setup."
+  fi
   setquota -u "$USERNAME" $((QUOTA_MB*1024)) $((QUOTA_MB*1024)) 0 0 /
 
   # Dirs
