@@ -333,7 +333,7 @@ EOF
 # DELETE HOST
 # ==============================================================================
 delete_host() {
-  detect_services
+  
   title "🧹 Delete Hosting Account"
 
   read -rp "$(echo -e "\e[36m➜ Username:\e[0m ")" USERNAME
