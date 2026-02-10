@@ -80,6 +80,11 @@ read_secret() {
   echo "$val"
 }
 
+pause() {
+  echo
+  read -rp "Press ENTER to continue..."
+}
+
 # ==============================================================================
 # Auto install prerequisites
 # ==============================================================================
@@ -89,16 +94,24 @@ ensure_pkg() {
   apt-get install -y "$1"
 }
 
-bootstrap() {
-  title "🔍 Checking prerequisites"
+auto_install() {
+  title "🔧 Auto Install Requisites"
+
   apt-get update -y
 
-  for p in nginx mariadb-server mariadb-client \
-           php php-fpm php-cli php-mysql \
-           certbot python3-certbot-nginx \
-           quota quotatool curl openssl; do
+  for p in \
+    nginx \
+    mariadb-server mariadb-client \
+    php php-fpm php-cli php-mysql php-curl php-gd php-intl php-mbstring php-zip php-xml php-opcache \
+    certbot python3-certbot-nginx \
+    quota quotatool \
+    curl wget unzip zip lsb-release ca-certificates gnupg openssl bc
+  do
     ensure_pkg "$p"
   done
+
+  ok "All requisites are installed"
+  pause
 }
 
 # ==============================================================================
@@ -114,13 +127,14 @@ detect_services() {
   [[ -n "$PHP_FPM_SERVICE" ]] || die "PHP-FPM not running"
 
   ok "PHP $PHP_VERSION detected"
-  ok "PHP-FPM: $PHP_FPM_SERVICE"
+  ok "PHP-FPM service: $PHP_FPM_SERVICE"
 }
 
 # ==============================================================================
 # CREATE HOST
 # ==============================================================================
 create_host() {
+  detect_services
   title "🚀 Create Hosting Account"
 
   DOMAIN=$(read_input "Domain")
@@ -137,12 +151,10 @@ create_host() {
 
   id "$USERNAME" &>/dev/null && die "User already exists"
 
-  # User
   useradd -m -d "$WEBROOT" -s /bin/bash "$USERNAME"
   echo "$USERNAME:$PASSWORD" | chpasswd
   ok "System user created"
 
-  # Quota (safe)
   if quotaon -p / &>/dev/null; then
     setquota -u "$USERNAME" $((QUOTA_MB*1024)) $((QUOTA_MB*1024)) 0 0 /
     ok "Disk quota set to ${QUOTA_MB}MB"
@@ -150,12 +162,10 @@ create_host() {
     warn "Quota not enabled on /. Skipping quota."
   fi
 
-  # Directories
   mkdir -p "$WEBROOT"/{public_html,logs,tmp}
   chown -R "$USERNAME:$USERNAME" "$WEBROOT"
   echo "<?php phpinfo();" > "$WEBROOT/public_html/index.php"
 
-  # PHP-FPM pool
   cat > /etc/php/$PHP_VERSION/fpm/pool.d/$USERNAME.conf <<EOF
 [$USERNAME]
 user = $USERNAME
@@ -170,7 +180,6 @@ EOF
   systemctl reload "$PHP_FPM_SERVICE"
   ok "PHP-FPM pool created"
 
-  # Database
   DB_NAME="db_$USERNAME"
   DB_USER="u_$USERNAME"
   DB_PASS=$(openssl rand -base64 16)
@@ -184,7 +193,6 @@ EOF
 
   ok "Database created"
 
-  # Nginx
   cat > /etc/nginx/sites-available/$DOMAIN <<EOF
 server {
   listen 80;
@@ -206,19 +214,22 @@ EOF
   certbot --nginx -d "$DOMAIN" -d "www.$DOMAIN" \
     --agree-tos -m "$EMAIL" --redirect --non-interactive
 
-  title "🎛 Hosting Created"
+  title "🎛 Hosting Created Successfully"
   echo " Domain : $DOMAIN"
   echo " User   : $USERNAME"
   echo " Quota  : ${QUOTA_MB}MB"
   echo " DB     : $DB_NAME"
   echo " DB Pass: $DB_PASS"
+
+  pause
 }
 
 # ==============================================================================
-# CLEANUP / DESTROY HOST
+# DELETE HOST
 # ==============================================================================
-cleanup_host() {
-  title "🧹 Destroy Hosting Account"
+delete_host() {
+  detect_services
+  title "🧹 Delete Hosting Account"
 
   USERNAME=$(read_input "Username to DELETE")
   [[ -z "$USERNAME" ]] && die "Username required"
@@ -229,47 +240,49 @@ cleanup_host() {
   HOME_DIR=$(getent passwd "$USERNAME" | cut -d: -f6 || true)
   DOMAIN=$(basename "$HOME_DIR")
 
-  # Quota cleanup
   quotaon -p / &>/dev/null && setquota -u "$USERNAME" 0 0 0 0 / || true
 
-  # PHP-FPM
   rm -f /etc/php/*/fpm/pool.d/$USERNAME.conf
-
-  # Nginx
   rm -f /etc/nginx/sites-enabled/$DOMAIN
   rm -f /etc/nginx/sites-available/$DOMAIN
 
-  # DB
   mariadb <<EOF
 DROP DATABASE IF EXISTS db_$USERNAME;
 DROP USER IF EXISTS 'u_$USERNAME'@'localhost';
 FLUSH PRIVILEGES;
 EOF
 
-  # User + home
   userdel -r "$USERNAME" &>/dev/null || true
 
   systemctl reload nginx
   systemctl reload "$PHP_FPM_SERVICE"
 
-  title "💣 Account Destroyed Completely"
-  echo " User   : $USERNAME"
-  echo " Domain : $DOMAIN"
+  ok "Hosting account $USERNAME deleted completely"
+  pause
 }
 
 # ==============================================================================
-# MAIN
+# MAIN MENU
 # ==============================================================================
-bootstrap
-detect_services
+while true; do
+  clear
+  echo -e "${B}${C}══════════════════════════════════════${X}"
+  echo -e "${B}${C} 🚀 Mini WHM – Modern CLI${X}"
+  echo -e "${B}${C}══════════════════════════════════════${X}"
+  echo
+  echo -e " ${G}1${X}) Auto Install Requisites"
+  echo -e " ${G}2${X}) Create Host"
+  echo -e " ${G}3${X}) Delete Host"
+  echo -e " ${G}4${X}) Exit"
+  echo
 
-case "${1:-}" in
-  create)  create_host ;;
-  cleanup) cleanup_host ;;
-  *)
-    echo "Usage:"
-    echo "  $0 create   → Create hosting account"
-    echo "  $0 cleanup  → Destroy hosting account"
-    exit 1
-    ;;
-esac
+  read -rp "Select an option [1-4]: " CHOICE
+
+  case "$CHOICE" in
+    1) auto_install ;;
+    2) create_host ;;
+    3) delete_host ;;
+    4) clear; exit 0 ;;
+    *) warn "Invalid option"; sleep 1 ;;
+  esac
+done
