@@ -18,6 +18,7 @@
 # Strict mode
 # ==============================================================================
 set -Eeuo pipefail
+[[ $EUID -eq 0 ]] || exec sudo -E bash "$0" "$@"
 
 # ==============================================================================
 # Root / sudo handling
@@ -57,69 +58,104 @@ echo -e "\e[1;36m═════════════════════
 echo -e " \e[1;33m✔ Hosting Script Started\e[0m"
 echo -e "\e[1;36m═══════════════════════════════════════════\e[0m"
 
-# ------------------------------------------------------------------------------
-# Globals
-# ------------------------------------------------------------------------------
-BASE_DIR="/var/www"
-DIALOG=dialog
+# ==============================================================================
+# Colors & helpers
+# ==============================================================================
+B="\e[1m"; R="\e[31m"; G="\e[32m"; Y="\e[33m"; C="\e[36m"; X="\e[0m"
 
-log() { echo "[✔] $*"; }
-die() { echo "[✖] $*" ; exit 1; }
+ok()    { echo -e "${G}✔${X} $*"; }
+warn()  { echo -e "${Y}⚠${X} $*"; }
+die()   { echo -e "${R}✖${X} $*"; exit 1; }
+title() { echo -e "\n${B}${C}$*${X}"; }
 
-# ------------------------------------------------------------------------------
+read_input() {
+  echo -ne "${C}➜${X} $1: "
+  read -r val
+  echo "$val"
+}
+
+read_secret() {
+  echo -ne "${C}➜${X} $1: "
+  read -rs val; echo
+  echo "$val"
+}
+
+# ==============================================================================
+# Auto install prerequisites
+# ==============================================================================
+ensure_pkg() {
+  dpkg -s "$1" &>/dev/null && return
+  warn "Installing missing package: $1"
+  apt-get install -y "$1"
+}
+
+bootstrap() {
+  title "🔍 Checking prerequisites"
+  apt-get update -y
+
+  for p in nginx mariadb-server mariadb-client \
+           php php-fpm php-cli php-mysql \
+           certbot python3-certbot-nginx \
+           quota quotatool curl openssl; do
+    ensure_pkg "$p"
+  done
+}
+
+# ==============================================================================
 # Detect services
-# ------------------------------------------------------------------------------
-PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null) \
-  || die "PHP not installed"
+# ==============================================================================
+detect_services() {
+  PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null) \
+    || die "PHP not installed"
 
-PHP_FPM_SERVICE=$(systemctl list-units --type=service --state=running \
-  | awk '/php.*fpm/ {print $1; exit}')
+  PHP_FPM_SERVICE=$(systemctl list-units --type=service --state=running \
+    | awk '/php.*fpm/ {print $1; exit}')
 
-[[ -n "$PHP_FPM_SERVICE" ]] || die "PHP-FPM not running"
+  [[ -n "$PHP_FPM_SERVICE" ]] || die "PHP-FPM not running"
 
-# ------------------------------------------------------------------------------
+  ok "PHP $PHP_VERSION detected"
+  ok "PHP-FPM: $PHP_FPM_SERVICE"
+}
+
+# ==============================================================================
 # CREATE HOST
-# ------------------------------------------------------------------------------
+# ==============================================================================
 create_host() {
+  title "🚀 Create Hosting Account"
 
-  DOMAIN=$($DIALOG --inputbox "Domain name" 8 40 3>&1 1>&2 2>&3)
-  USERNAME=$($DIALOG --inputbox "Username" 8 40 3>&1 1>&2 2>&3)
-  PASSWORD=$($DIALOG --passwordbox "Password" 8 40 3>&1 1>&2 2>&3)
-  EMAIL=$($DIALOG --inputbox "Admin Email (SSL)" 8 40 3>&1 1>&2 2>&3)
-  QUOTA_MB=$($DIALOG --inputbox "Disk Quota (MB)" 8 40 "1024" 3>&1 1>&2 2>&3)
+  DOMAIN=$(read_input "Domain")
+  USERNAME=$(read_input "Username")
+  PASSWORD=$(read_secret "Password")
+  EMAIL=$(read_input "Admin Email (SSL)")
+  QUOTA_MB=$(read_input "Disk quota (MB, e.g. 1024)")
 
-  [[ -z "$DOMAIN" || -z "$USERNAME" || -z "$PASSWORD" ]] && return
+  [[ -z "$DOMAIN" || -z "$USERNAME" || -z "$PASSWORD" ]] && die "Missing input"
 
-  id "$USERNAME" &>/dev/null && {
-    $DIALOG --msgbox "User already exists!" 6 40
-    return
-  }
-
+  BASE_DIR="/var/www"
   WEBROOT="$BASE_DIR/$DOMAIN"
   SOCKET="/run/php/php-fpm-$USERNAME.sock"
-  DB_NAME="db_$USERNAME"
-  DB_USER="u_$USERNAME"
-  DB_PASS=$(openssl rand -base64 16)
+
+  id "$USERNAME" &>/dev/null && die "User already exists"
 
   # User
   useradd -m -d "$WEBROOT" -s /bin/bash "$USERNAME"
   echo "$USERNAME:$PASSWORD" | chpasswd
+  ok "System user created"
 
-  # Quota
+  # Quota (safe)
   if quotaon -p / &>/dev/null; then
-  setquota -u "$USERNAME" $((QUOTA_MB*1024)) $((QUOTA_MB*1024)) 0 0 /
+    setquota -u "$USERNAME" $((QUOTA_MB*1024)) $((QUOTA_MB*1024)) 0 0 /
+    ok "Disk quota set to ${QUOTA_MB}MB"
   else
-  warn "Quota not enabled on /. Skipping quota setup."
+    warn "Quota not enabled on /. Skipping quota."
   fi
-  setquota -u "$USERNAME" $((QUOTA_MB*1024)) $((QUOTA_MB*1024)) 0 0 /
 
-  # Dirs
+  # Directories
   mkdir -p "$WEBROOT"/{public_html,logs,tmp}
   chown -R "$USERNAME:$USERNAME" "$WEBROOT"
-
   echo "<?php phpinfo();" > "$WEBROOT/public_html/index.php"
 
-  # PHP-FPM
+  # PHP-FPM pool
   cat > /etc/php/$PHP_VERSION/fpm/pool.d/$USERNAME.conf <<EOF
 [$USERNAME]
 user = $USERNAME
@@ -132,14 +168,21 @@ pm.max_children = 5
 EOF
 
   systemctl reload "$PHP_FPM_SERVICE"
+  ok "PHP-FPM pool created"
 
-  # DB
+  # Database
+  DB_NAME="db_$USERNAME"
+  DB_USER="u_$USERNAME"
+  DB_PASS=$(openssl rand -base64 16)
+
   mariadb <<EOF
 CREATE DATABASE \`$DB_NAME\`;
 CREATE USER '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASS';
 GRANT ALL ON \`$DB_NAME\`.* TO '$DB_USER'@'localhost';
 FLUSH PRIVILEGES;
 EOF
+
+  ok "Database created"
 
   # Nginx
   cat > /etc/nginx/sites-available/$DOMAIN <<EOF
@@ -148,6 +191,7 @@ server {
   server_name $DOMAIN www.$DOMAIN;
   root $WEBROOT/public_html;
   index index.php index.html;
+
   location ~ \.php\$ {
     include snippets/fastcgi-php.conf;
     fastcgi_pass unix:$SOCKET;
@@ -157,61 +201,75 @@ EOF
 
   ln -s /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/$DOMAIN
   nginx -t && systemctl reload nginx
+  ok "Nginx vhost enabled"
 
   certbot --nginx -d "$DOMAIN" -d "www.$DOMAIN" \
     --agree-tos -m "$EMAIL" --redirect --non-interactive
 
-  $DIALOG --msgbox "Hosting created successfully 🎉
-
-Domain: $DOMAIN
-User: $USERNAME
-Quota: ${QUOTA_MB}MB
-DB Pass: $DB_PASS" 12 50
+  title "🎛 Hosting Created"
+  echo " Domain : $DOMAIN"
+  echo " User   : $USERNAME"
+  echo " Quota  : ${QUOTA_MB}MB"
+  echo " DB     : $DB_NAME"
+  echo " DB Pass: $DB_PASS"
 }
 
-# ------------------------------------------------------------------------------
-# DELETE HOST (FULL DESTROY)
-# ------------------------------------------------------------------------------
-delete_host() {
+# ==============================================================================
+# CLEANUP / DESTROY HOST
+# ==============================================================================
+cleanup_host() {
+  title "🧹 Destroy Hosting Account"
 
-  USERNAME=$($DIALOG --inputbox "Username to DELETE" 8 40 3>&1 1>&2 2>&3)
-  [[ -z "$USERNAME" ]] && return
+  USERNAME=$(read_input "Username to DELETE")
+  [[ -z "$USERNAME" ]] && die "Username required"
 
-  $DIALOG --yesno "⚠️ This will COMPLETELY remove user $USERNAME\n
-Home, DB, Nginx, PHP-FPM\n\nAre you sure?" 12 50 || return
+  read -rp "Type DELETE to confirm: " CONFIRM
+  [[ "$CONFIRM" != "DELETE" ]] && die "Cancelled"
 
-  DOMAIN=$(basename "$(getent passwd "$USERNAME" | cut -d: -f6)")
+  HOME_DIR=$(getent passwd "$USERNAME" | cut -d: -f6 || true)
+  DOMAIN=$(basename "$HOME_DIR")
 
-  rm -f /etc/nginx/sites-enabled/$DOMAIN
-  rm -f /etc/nginx/sites-available/$DOMAIN
+  # Quota cleanup
+  quotaon -p / &>/dev/null && setquota -u "$USERNAME" 0 0 0 0 / || true
+
+  # PHP-FPM
   rm -f /etc/php/*/fpm/pool.d/$USERNAME.conf
 
+  # Nginx
+  rm -f /etc/nginx/sites-enabled/$DOMAIN
+  rm -f /etc/nginx/sites-available/$DOMAIN
+
+  # DB
   mariadb <<EOF
 DROP DATABASE IF EXISTS db_$USERNAME;
 DROP USER IF EXISTS 'u_$USERNAME'@'localhost';
 FLUSH PRIVILEGES;
 EOF
 
-  userdel -r "$USERNAME" || true
+  # User + home
+  userdel -r "$USERNAME" &>/dev/null || true
+
   systemctl reload nginx
   systemctl reload "$PHP_FPM_SERVICE"
 
-  $DIALOG --msgbox "User $USERNAME removed completely 🧨" 8 40
+  title "💣 Account Destroyed Completely"
+  echo " User   : $USERNAME"
+  echo " Domain : $DOMAIN"
 }
 
-# ------------------------------------------------------------------------------
-# MENU
-# ------------------------------------------------------------------------------
-while true; do
-  CHOICE=$($DIALOG --menu "Mini WHM" 15 50 4 \
-    1 "Create Hosting" \
-    2 "Delete Hosting" \
-    3 "Exit" \
-    3>&1 1>&2 2>&3)
+# ==============================================================================
+# MAIN
+# ==============================================================================
+bootstrap
+detect_services
 
-  case "$CHOICE" in
-    1) create_host ;;
-    2) delete_host ;;
-    3|*) clear; exit ;;
-  esac
-done
+case "${1:-}" in
+  create)  create_host ;;
+  cleanup) cleanup_host ;;
+  *)
+    echo "Usage:"
+    echo "  $0 create   → Create hosting account"
+    echo "  $0 cleanup  → Destroy hosting account"
+    exit 1
+    ;;
+esac
