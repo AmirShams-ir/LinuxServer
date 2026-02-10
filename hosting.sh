@@ -121,7 +121,7 @@ detect_services() {
 
   # ---------------- PHP ----------------
   PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null) \
-    || die "PHP is not installed"
+    || echo "PHP is not installed"
 
   PHP_FPM_SERVICE=$(systemctl list-units --type=service --state=running \
     | awk '/php.*fpm/ {print $1; exit}')
@@ -132,12 +132,12 @@ detect_services() {
   ok "PHP-FPM service: $PHP_FPM_SERVICE"
 
   # ---------------- MariaDB ----------------
-  command -v mariadb >/dev/null 2>&1 || die "MariaDB client not installed"
+  command -v mariadb >/dev/null 2>&1 || echo "MariaDB client not installed"
 
   MARIADB_SERVICE=$(systemctl list-units --type=service --state=running \
     | awk '/mariadb\.service/ {print $1}')
 
-  [[ -n "$MARIADB_SERVICE" ]] || die "MariaDB service is not running"
+  [[ -n "$MARIADB_SERVICE" ]] || echo "MariaDB service is not running"
 
   MARIADB_VERSION=$(mariadb --version | awk '{print $5}')
 
@@ -156,7 +156,7 @@ detect_services() {
     [[ -d "$p" ]] && PHPMYADMIN_PATH="$p" && break
   done
 
-  [[ -n "$PHPMYADMIN_PATH" ]] || die "phpMyAdmin is not installed"
+  [[ -n "$PHPMYADMIN_PATH" ]] || echo "phpMyAdmin is not installed"
 
   ok "phpMyAdmin detected at: $PHPMYADMIN_PATH"
 }
