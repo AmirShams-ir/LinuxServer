@@ -182,7 +182,6 @@ enable_quota() {
   ok "Quota successfully enabled on /"
 }
 
-
 # ==============================================================================
 # Detect services (SAFE with set -e)
 # ==============================================================================
@@ -244,7 +243,8 @@ detect_services() {
 # ==============================================================================
 create_host() {
   detect_services
-  title "🚀 Create Hosting Account"
+  
+title "🚀 Create Hosting Account"
 
  read -rp "$(echo -e "\e[36m➜ Domain:\e[0m ")" DOMAIN
  read -rp "$(echo -e "\e[36m➜ Username:\e[0m ")" USERNAME
@@ -252,7 +252,6 @@ create_host() {
  echo
  read -rp "$(echo -e "\e[36m➜ Admin Email (SSL):\e[0m ")" EMAIL
  read -rp "$(echo -e "\e[36m➜ Disk quota (MB, e.g. 1024):\e[0m ")" QUOTA_MB
-
 
   [[ -z "$DOMAIN" || -z "$USERNAME" || -z "$PASSWORD" ]] && die "Missing input"
 
@@ -265,6 +264,8 @@ create_host() {
   useradd -m -d "$WEBROOT" -s /bin/bash "$USERNAME"
   echo "$USERNAME:$PASSWORD" | chpasswd
   ok "System user created"
+
+  enable_quota
 
   if quotaon -p / &>/dev/null; then
     setquota -u "$USERNAME" $((QUOTA_MB*1024)) $((QUOTA_MB*1024)) 0 0 /
