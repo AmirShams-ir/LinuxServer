@@ -19,6 +19,7 @@
 # ==============================================================================
 set -Eeuo pipefail
 [[ $EUID -eq 0 ]] || exec sudo -E bash "$0" "$@"
+QUOTA_READY=0
 
 # ==============================================================================
 # Root / sudo handling
@@ -119,67 +120,56 @@ auto_install() {
 # ==============================================================================
 enable_quota() {
 
+  QUOTA_READY=0
   title "🧠 Checking and enabling quota (safe mode)"
 
-  # ---------- Detect filesystem ----------
-  ROOT_FS=""
+  # Detect filesystem
   if ! ROOT_FS=$(findmnt -n -o FSTYPE / 2>/dev/null); then
-    warn "Cannot detect filesystem type – skipping quota"
+    warn "Cannot detect filesystem – skipping quota"
     return 0
   fi
 
   if [[ ! "$ROOT_FS" =~ ^(ext4|xfs)$ ]]; then
-    warn "Filesystem $ROOT_FS does not support standard quota – skipping"
+    warn "Filesystem $ROOT_FS does not support quota – skipping"
     return 0
   fi
 
   ok "Root filesystem: $ROOT_FS"
 
-  # ---------- Check fstab ----------
+  # Enable quota flags in fstab if missing
   if ! grep -Eq '^[^#].+[[:space:]]/[[:space:]].*(usrquota|uquota)' /etc/fstab; then
-    warn "Quota flags not found in /etc/fstab – trying to enable"
+    warn "Quota flags not found in /etc/fstab – enabling"
 
-    cp /etc/fstab "/etc/fstab.bak.$(date +%F-%H%M%S)" || {
-      warn "Failed to backup /etc/fstab – skipping quota"
-      return 0
-    }
+    cp /etc/fstab "/etc/fstab.bak.$(date +%F-%H%M%S)" || return 0
 
-    if ! sed -i '/[[:space:]]\/[[:space:]]/{
+    sed -i '/[[:space:]]\/[[:space:]]/{
       s/defaults/defaults,usrquota,grpquota/
       t
       s/\(.*\)/\1,usrquota,grpquota/
-    }' /etc/fstab; then
-      warn "Failed to modify /etc/fstab – skipping quota"
+    }' /etc/fstab || return 0
+
+    mount -o remount / 2>/dev/null || {
+      warn "Remount failed – reboot required"
       return 0
-    fi
+    }
 
-    ok "Quota flags added to /etc/fstab"
-
-    if ! mount -o remount / 2>/dev/null; then
-      warn "Remount failed – reboot required to enable quota"
-      return 0
-    fi
-
-    ok "Filesystem remounted with quota options"
-  else
-    ok "Quota already enabled in /etc/fstab"
+    ok "Filesystem remounted with quota"
   fi
 
-  # ---------- Initialize quota ----------
+  # Initialize quota
   if ! quotacheck -cum / >/dev/null 2>&1; then
     warn "quotacheck failed – quota not usable on this system"
     return 0
   fi
 
-  ok "Quota files initialized"
-
-  # ---------- Enable quota ----------
+  # Enable quota
   if ! quotaon / >/dev/null 2>&1; then
-    warn "quotaon failed – kernel or FS does not support quota"
+    warn "quotaon failed – quota not usable"
     return 0
   fi
 
   ok "Quota successfully enabled on /"
+  QUOTA_READY=1
 }
 
 # ==============================================================================
@@ -266,13 +256,17 @@ title "🚀 Create Hosting Account"
   ok "System user created"
 
   enable_quota
-
-  if quotaon -p / &>/dev/null; then
-    setquota -u "$USERNAME" $((QUOTA_MB*1024)) $((QUOTA_MB*1024)) 0 0 /
+  
+# Setquota
+if [[ "$QUOTA_READY" -eq 1 ]]; then
+  if setquota -u "$USERNAME" $((QUOTA_MB*1024)) $((QUOTA_MB*1024)) 0 0 / 2>/dev/null; then
     ok "Disk quota set to ${QUOTA_MB}MB"
   else
-    warn "Quota not enabled on /. Skipping quota."
+    warn "Quota enabled but failed to apply for user"
   fi
+else
+  warn "Quota not available – host created without disk limit"
+fi
 
   mkdir -p "$WEBROOT"/{public_html,logs,tmp}
   chown -R "$USERNAME:$USERNAME" "$WEBROOT"
