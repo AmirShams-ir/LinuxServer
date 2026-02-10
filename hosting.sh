@@ -226,6 +226,7 @@ detect_services() {
   fi
 
   ok "phpMyAdmin detected at: $PHPMYADMIN_PATH"
+  pause
 }
 
 # ==============================================================================
