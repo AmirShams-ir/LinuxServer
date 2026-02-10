@@ -115,6 +115,75 @@ auto_install() {
 }
 
 # ==============================================================================
+# Auto Enable Quota on / (SAFE with set -Eeuo pipefail)
+# ==============================================================================
+enable_quota() {
+
+  title "🧠 Checking and enabling quota (safe mode)"
+
+  # ---------- Detect filesystem ----------
+  ROOT_FS=""
+  if ! ROOT_FS=$(findmnt -n -o FSTYPE / 2>/dev/null); then
+    warn "Cannot detect filesystem type – skipping quota"
+    return 0
+  fi
+
+  if [[ ! "$ROOT_FS" =~ ^(ext4|xfs)$ ]]; then
+    warn "Filesystem $ROOT_FS does not support standard quota – skipping"
+    return 0
+  fi
+
+  ok "Root filesystem: $ROOT_FS"
+
+  # ---------- Check fstab ----------
+  if ! grep -Eq '^[^#].+[[:space:]]/[[:space:]].*(usrquota|uquota)' /etc/fstab; then
+    warn "Quota flags not found in /etc/fstab – trying to enable"
+
+    cp /etc/fstab "/etc/fstab.bak.$(date +%F-%H%M%S)" || {
+      warn "Failed to backup /etc/fstab – skipping quota"
+      return 0
+    }
+
+    if ! sed -i '/[[:space:]]\/[[:space:]]/{
+      s/defaults/defaults,usrquota,grpquota/
+      t
+      s/\(.*\)/\1,usrquota,grpquota/
+    }' /etc/fstab; then
+      warn "Failed to modify /etc/fstab – skipping quota"
+      return 0
+    fi
+
+    ok "Quota flags added to /etc/fstab"
+
+    if ! mount -o remount / 2>/dev/null; then
+      warn "Remount failed – reboot required to enable quota"
+      return 0
+    fi
+
+    ok "Filesystem remounted with quota options"
+  else
+    ok "Quota already enabled in /etc/fstab"
+  fi
+
+  # ---------- Initialize quota ----------
+  if ! quotacheck -cum / >/dev/null 2>&1; then
+    warn "quotacheck failed – quota not usable on this system"
+    return 0
+  fi
+
+  ok "Quota files initialized"
+
+  # ---------- Enable quota ----------
+  if ! quotaon / >/dev/null 2>&1; then
+    warn "quotaon failed – kernel or FS does not support quota"
+    return 0
+  fi
+
+  ok "Quota successfully enabled on /"
+}
+
+
+# ==============================================================================
 # Detect services (SAFE with set -e)
 # ==============================================================================
 detect_services() {
@@ -168,61 +237,6 @@ detect_services() {
   fi
 
   ok "phpMyAdmin detected at: $PHPMYADMIN_PATH"
-}
-
-# ==============================================================================
-# Auto Enable Quota on /
-# ==============================================================================
-enable_quota() {
-
-  title "🧠 Checking filesystem quota support"
-
-  ROOT_FS=$(findmnt -n -o FSTYPE /)
-  [[ "$ROOT_FS" =~ ^(ext4|xfs)$ ]] || {
-    warn "Filesystem $ROOT_FS does not support standard quota. Skipping."
-    return
-  }
-
-  # Check fstab entry
-  if ! grep -Eq '^[^#].+\s+/\s+.*(usrquota|uquota)' /etc/fstab; then
-    warn "Quota not enabled in /etc/fstab – enabling it now"
-
-    cp /etc/fstab /etc/fstab.bak.$(date +%F-%T)
-
-    sed -i '/[[:space:]]\/[[:space:]]/{
-      s/defaults/defaults,usrquota,grpquota/
-      t
-      s/\(.*\)/\1,usrquota,grpquota/
-    }' /etc/fstab
-
-    ok "Quota flags added to /etc/fstab"
-    NEED_REMOUNT=1
-  fi
-
-  # Remount if needed
-  if [[ "${NEED_REMOUNT:-0}" -eq 1 ]]; then
-    if mount -o remount /; then
-      ok "Root filesystem remounted with quota"
-    else
-      warn "Remount failed – reboot may be required"
-      return
-    fi
-  fi
-
-  # Initialize quota files
-  if quotacheck -cum /; then
-    ok "Quota files initialized"
-  else
-    warn "quotacheck failed – skipping quota"
-    return
-  fi
-
-  # Enable quota
-  if quotaon /; then
-    ok "Quota successfully enabled on /"
-  else
-    warn "quotaon failed – quota not active"
-  fi
 }
 
 # ==============================================================================
