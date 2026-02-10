@@ -171,6 +171,61 @@ detect_services() {
 }
 
 # ==============================================================================
+# Auto Enable Quota on /
+# ==============================================================================
+enable_quota() {
+
+  title "🧠 Checking filesystem quota support"
+
+  ROOT_FS=$(findmnt -n -o FSTYPE /)
+  [[ "$ROOT_FS" =~ ^(ext4|xfs)$ ]] || {
+    warn "Filesystem $ROOT_FS does not support standard quota. Skipping."
+    return
+  }
+
+  # Check fstab entry
+  if ! grep -Eq '^[^#].+\s+/\s+.*(usrquota|uquota)' /etc/fstab; then
+    warn "Quota not enabled in /etc/fstab – enabling it now"
+
+    cp /etc/fstab /etc/fstab.bak.$(date +%F-%T)
+
+    sed -i '/[[:space:]]\/[[:space:]]/{
+      s/defaults/defaults,usrquota,grpquota/
+      t
+      s/\(.*\)/\1,usrquota,grpquota/
+    }' /etc/fstab
+
+    ok "Quota flags added to /etc/fstab"
+    NEED_REMOUNT=1
+  fi
+
+  # Remount if needed
+  if [[ "${NEED_REMOUNT:-0}" -eq 1 ]]; then
+    if mount -o remount /; then
+      ok "Root filesystem remounted with quota"
+    else
+      warn "Remount failed – reboot may be required"
+      return
+    fi
+  fi
+
+  # Initialize quota files
+  if quotacheck -cum /; then
+    ok "Quota files initialized"
+  else
+    warn "quotacheck failed – skipping quota"
+    return
+  fi
+
+  # Enable quota
+  if quotaon /; then
+    ok "Quota successfully enabled on /"
+  else
+    warn "quotaon failed – quota not active"
+  fi
+}
+
+# ==============================================================================
 # CREATE HOST
 # ==============================================================================
 create_host() {
