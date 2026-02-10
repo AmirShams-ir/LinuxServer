@@ -375,21 +375,21 @@ while true; do
   echo -e "${B}${C} 🚀 Mini WHM – Modern CLI${X}"
   echo -e "${B}${C}══════════════════════════════════════${X}"
   echo
-  echo -e " ${G}4${X}) Detect Services"
   echo -e " ${G}1${X}) Install Requisites"
+  echo -e " ${G}4${X}) Detect Services"
   echo -e " ${G}2${X}) Create Host"
   echo -e " ${G}3${X}) Delete Host"
   echo -e " ${G}4${X}) Exit Script"
   echo
 
-  read -rp "Select an option [1-4]: " CHOICE
+  read -rp "Select an option [1-5]: " CHOICE
 
   case "$CHOICE" in
-    0) detect_services ;;
     1) auto_install ;;
-    2) create_host ;;
-    3) delete_host ;;
-    4) clear; exit 0 ;;
+    2) detect_services ;;
+    3) create_host ;;
+    4) delete_host ;;
+    5) clear; exit 0 ;;
     *) warn "Invalid option"; sleep 1 ;;
   esac
 done
