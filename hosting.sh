@@ -376,10 +376,10 @@ while true; do
   echo -e "${B}${C}══════════════════════════════════════${X}"
   echo
   echo -e " ${G}1${X}) Install Requisites"
-  echo -e " ${G}4${X}) Detect Services"
-  echo -e " ${G}2${X}) Create Host"
-  echo -e " ${G}3${X}) Delete Host"
-  echo -e " ${G}4${X}) Exit Script"
+  echo -e " ${G}2${X}) Detect Services"
+  echo -e " ${G}3${X}) Create Host"
+  echo -e " ${G}4${X}) Delete Host"
+  echo -e " ${G}5${X}) Exit Script"
   echo
 
   read -rp "Select an option [1-5]: " CHOICE
