@@ -342,11 +342,11 @@ delete_host() {
   detect_services
   title "🧹 Delete Hosting Account"
 
-  USERNAME=$(read_input "Username to DELETE")
+  read -rp "$(echo -e "\e[36m➜ Username:\e[0m ")" USERNAME
   [[ -z "$USERNAME" ]] && die "Username required"
 
-  read -rp "Type DELETE to confirm: " CONFIRM
-  [[ "$CONFIRM" != "DELETE" ]] && die "Cancelled"
+  read -rp "$(echo -e "\e[36m➜ Type DEL to confirm:\e[0m ")" CONFIRM
+  [[ "$CONFIRM" != "DEL" ]] && die "Cancelled"
 
   HOME_DIR=$(getent passwd "$USERNAME" | cut -d: -f6 || true)
   DOMAIN=$(basename "$HOME_DIR")
