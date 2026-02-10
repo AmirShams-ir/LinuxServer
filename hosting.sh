@@ -118,16 +118,47 @@ auto_install() {
 # Detect services
 # ==============================================================================
 detect_services() {
+
+  # ---------------- PHP ----------------
   PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null) \
-    || die "PHP not installed"
+    || die "PHP is not installed"
 
   PHP_FPM_SERVICE=$(systemctl list-units --type=service --state=running \
     | awk '/php.*fpm/ {print $1; exit}')
 
-  [[ -n "$PHP_FPM_SERVICE" ]] || die "PHP-FPM not running"
+  [[ -n "$PHP_FPM_SERVICE" ]] || die "PHP-FPM service is not running"
 
-  ok "PHP $PHP_VERSION detected"
+  ok "PHP detected: $PHP_VERSION"
   ok "PHP-FPM service: $PHP_FPM_SERVICE"
+
+  # ---------------- MariaDB ----------------
+  command -v mariadb >/dev/null 2>&1 || die "MariaDB client not installed"
+
+  MARIADB_SERVICE=$(systemctl list-units --type=service --state=running \
+    | awk '/mariadb\.service/ {print $1}')
+
+  [[ -n "$MARIADB_SERVICE" ]] || die "MariaDB service is not running"
+
+  MARIADB_VERSION=$(mariadb --version | awk '{print $5}')
+
+  ok "MariaDB detected: $MARIADB_VERSION"
+  ok "MariaDB service is running"
+
+  # ---------------- phpMyAdmin ----------------
+  PHPMYADMIN_PATH=""
+
+  for p in \
+    /usr/share/phpmyadmin \
+    /usr/share/phpMyAdmin \
+    /var/www/phpmyadmin \
+    /var/www/html/phpmyadmin
+  do
+    [[ -d "$p" ]] && PHPMYADMIN_PATH="$p" && break
+  done
+
+  [[ -n "$PHPMYADMIN_PATH" ]] || die "phpMyAdmin is not installed"
+
+  ok "phpMyAdmin detected at: $PHPMYADMIN_PATH"
 }
 
 # ==============================================================================
@@ -137,11 +168,13 @@ create_host() {
   detect_services
   title "🚀 Create Hosting Account"
 
-  DOMAIN=$(read_input "Domain")
-  USERNAME=$(read_input "Username")
-  PASSWORD=$(read_secret "Password")
-  EMAIL=$(read_input "Admin Email (SSL)")
-  QUOTA_MB=$(read_input "Disk quota (MB, e.g. 1024)")
+ read -rp "$(echo -e "\e[36m➜ Domain:\e[0m ")" DOMAIN
+ read -rp "$(echo -e "\e[36m➜ Username:\e[0m ")" USERNAME
+ read -rsp "$(echo -e "\e[36m➜ Password:\e[0m ")" PASSWORD
+ echo
+ read -rp "$(echo -e "\e[36m➜ Admin Email (SSL):\e[0m ")" EMAIL
+ read -rp "$(echo -e "\e[36m➜ Disk quota (MB, e.g. 1024):\e[0m ")" QUOTA_MB
+
 
   [[ -z "$DOMAIN" || -z "$USERNAME" || -z "$PASSWORD" ]] && die "Missing input"
 
