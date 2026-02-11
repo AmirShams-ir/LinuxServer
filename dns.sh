@@ -27,11 +27,7 @@ fi
 # ==============================================================================
 # OS detection
 # ==============================================================================
-if [[ ! -f /etc/os-release ]] || \
-   ! grep -Eqi '^(ID=(debian|ubuntu)|ID_LIKE=.*(debian|ubuntu))' /etc/os-release; then
-  echo "❌ ERROR: Unsupported OS. Debian/Ubuntu only."
-  exit 1
-fi
+source /etc/os-release
 
 IS_UBUNTU=false
 IS_DEBIAN=false
@@ -41,7 +37,7 @@ case "$ID" in
   debian) IS_DEBIAN=true ;;
 esac
 
-$IS_UBUNTU || $IS_DEBIAN || exit 1
+$IS_UBUNTU || $IS_DEBIAN ||  echo "❌ ERROR: Unsupported OS. Debian/Ubuntu only." exit 1
 
 # ==============================================================================
 # Logging
