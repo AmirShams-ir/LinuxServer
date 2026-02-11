@@ -1,170 +1,179 @@
 #!/usr/bin/env bash
 # -----------------------------------------------------------------------------
-# Description: This script performs mandatory base hosting setup on a fresh
-#              Linux VPS.
-#
+# Description: TLS/SSL bootstrap with DNS validation (Certbot standalone)
 # Author: Amir Shams
 # GitHub: https://github.com/AmirShams-ir/LinuxServer
-#
-# Disclaimer: This script is provided for educational and informational
-#             purposes only. Use it responsibly and in compliance with all
-#             applicable laws and regulations.
-#
-# Note: This script is designed to be SAFE, IDEMPOTENT, and NON-DESTRUCTIVE.
-#       Review before use. No application-level services are installed here.
+# License: See GitHub repository for license details.
 # -----------------------------------------------------------------------------
 
 set -Eeuo pipefail
+IFS=$'\n\t'
 
 # ==============================================================================
-# Root / sudo handling
+# Root Handling
 # ==============================================================================
 if [[ "${EUID}" -ne 0 ]]; then
   if command -v sudo >/dev/null 2>&1; then
-    echo "🔐 Root privileges required. Please enter sudo password..."
-    exec sudo -E bash "$0" "$@"
+    exec sudo --preserve-env=PATH bash "$0" "$@"
   else
-    echo "❌ ERROR: This script must be run as root."
+    printf "Root privileges required.\n"
     exit 1
   fi
 fi
 
 # ==============================================================================
-# OS validation
+# OS Validation
 # ==============================================================================
-if [[ ! -f /etc/os-release ]] || \
-   ! grep -Eqi '^(ID=(debian|ubuntu)|ID_LIKE=.*(debian|ubuntu))' /etc/os-release; then
-  echo "❌ ERROR: Unsupported OS. Debian/Ubuntu only."
+if [[ -f /etc/os-release ]]; then
+  source /etc/os-release
+else
+  printf "Cannot detect OS.\n"
   exit 1
 fi
+
+[[ "${ID}" == "debian" || "${ID}" == "ubuntu" || "${ID_LIKE:-}" == *"debian"* ]] \
+  || { printf "Debian/Ubuntu only.\n"; exit 1; }
 
 # ==============================================================================
 # Logging
 # ==============================================================================
-LOG="/var/log/server-ssl.log"
+LOG="/var/log/server-$(basename "$0" .sh).log"
 mkdir -p "$(dirname "$LOG")"
-touch "$LOG"
-exec > >(tee -a "$LOG") 2>&1
-echo "[✔] Logging enabled: $LOG"
+: > "$LOG"
+
+{
+  printf "============================================================\n"
+  printf " Script: %s\n" "$(basename "$0")"
+  printf " Started at: %s\n" "$(date '+%Y-%m-%d %H:%M:%S')"
+  printf " Hostname: %s\n" "$(hostname)"
+  printf "============================================================\n"
+} >> "$LOG"
+
+exec > >(tee -a "$LOG") 2> >(tee -a "$LOG" >&2)
+
+# ==============================================================================
+# Helpers
+# ==============================================================================
+info() { printf "\e[34m%s\e[0m\n" "$*"; }
+rept() { printf "\e[32m[✔] %s\e[0m\n" "$*"; }
+warn() { printf "\e[33m[!] %s\e[0m\n" "$*"; }
+die()  { printf "\e[31m[✖] %s\e[0m\n" "$*"; exit 1; }
+
+TIMEZONE="UTC"
 
 # ==============================================================================
 # Banner
 # ==============================================================================
-echo -e "\e[1;36m═══════════════════════════════════════════\e[0m"
-echo -e " \e[1;33m✔ TLS/SSL Script Started\e[0m"
-echo -e "\e[1;36m═══════════════════════════════════════════\e[0m"
+info "═══════════════════════════════════════════"
+info "✔ TLS/SSL Bootstrap Script Started"
+info "═══════════════════════════════════════════"
 
-# --------------------------------------------------
-# INPUT
-# --------------------------------------------------
-TIMEZONE="UTC"
-read -rp "Enter hostname (e.g. vps): " HOSTNAME 
-read -rp "Enter domain name (e.g. example.com): " DOMAIN 
-read -rp "Enter admin email (SSL & alerts): " ADMIN_EMAIL 
-[[ -z "$HOSTNAME" || -z "$DOMAIN" || -z "$ADMIN_EMAIL" ]] && {
-  echo "ERROR: Empty inputs"
-  exit 1
-}
+# ==============================================================================
+# Input
+# ==============================================================================
+info "Collecting user input..."
+
+read -rp "Enter hostname (e.g. vps): " HOSTNAME
+read -rp "Enter domain name (e.g. example.com): " DOMAIN
+read -rp "Enter admin email (SSL alerts): " ADMIN_EMAIL
+
+[[ -n "$HOSTNAME" && -n "$DOMAIN" && -n "$ADMIN_EMAIL" ]] \
+  || die "Inputs cannot be empty"
+
+[[ "$DOMAIN" =~ \. ]] || die "Invalid domain format"
+[[ "$ADMIN_EMAIL" =~ @ ]] || die "Invalid email format"
+
 FQDN="${HOSTNAME}.${DOMAIN}"
-# --------------------------------------------------
-# HELPERS
-# --------------------------------------------------
-log()  { echo -e "\e[32m[✔] $1\e[0m"; }
-warn() { echo -e "\e[33m[!] $1\e[0m"; }
-die()  { echo -e "\e[31m[✖] $1\e[0m"; exit 1; }
 
-# --------------------------------------------------
-# BASIC SYSTEM
-# --------------------------------------------------
-log "Setting hostname"
+rept "Input validated"
+
+# ==============================================================================
+# Basic System Preparation
+# ==============================================================================
+info "Preparing base system..."
+
 hostnamectl set-hostname "$FQDN" || true
 grep -q "$FQDN" /etc/hosts || echo "127.0.1.1 $FQDN $HOSTNAME" >> /etc/hosts
-
-log "Setting timezone"
 timedatectl set-timezone "$TIMEZONE" || true
 
-log "Updating system"
-apt-get update
-apt-get -y dist-upgrade
+apt-get update || die "APT update failed"
+apt-get upgrade -y || die "System upgrade failed"
 
-log "Installing base packages"
 apt-get install -y \
-  curl wget git sudo unzip \
+  curl wget git unzip \
   ca-certificates gnupg lsb-release \
-  htop ncdu dnsutils
+  dnsutils certbot vnstat
 
-# --------------------------------------------------
-# DNS A RECORD CHECK
-# --------------------------------------------------
-log "Validating DNS A record for $FQDN"
+rept "System prepared"
 
-SERVER_IP=$(curl -fsSL https://api.ipify.org)
-DNS_IP=$(dig +short "$FQDN" A | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n1)
+# ==============================================================================
+# DNS A Record Validation
+# ==============================================================================
+info "Validating DNS A record..."
+
+SERVER_IP="$(curl -fsSL https://api.ipify.org || true)"
+DNS_IP="$(dig +short "$FQDN" A | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n1)"
+
+[[ -n "$SERVER_IP" ]] || die "Cannot detect server public IP"
 
 if [[ "$SERVER_IP" != "$DNS_IP" ]]; then
-  warn "DNS A record mismatch"
-  echo " Expected IP : $SERVER_IP"
-  echo " DNS IP      : ${DNS_IP:-NOT FOUND}"
-  echo
-  echo "👉 Please set DNS A record:"
-  echo "   $FQDN  →  $SERVER_IP"
-  die "Fix DNS first, then re-run the script"
+  warn "DNS A record mismatch detected"
+  warn "Server IP : $SERVER_IP"
+  warn "DNS IP    : ${DNS_IP:-NOT FOUND}"
+  die "Fix DNS A record before issuing certificate"
 fi
 
-log "DNS A record verified successfully"
+rept "DNS A record verified"
 
-# --------------------------------------------------
-# SSL (Certbot)
-# --------------------------------------------------
-log "Installing Certbot"
-apt-get install -y certbot
+# ==============================================================================
+# SSL Certificate (Standalone)
+# ==============================================================================
+info "Issuing SSL certificate..."
 
 if systemctl is-active --quiet lsws; then
   systemctl stop lsws
   NEED_LSWS_RESTART=1
 fi
 
-log "Issuing SSL certificate for $FQDN"
 certbot certonly \
   --standalone \
   --preferred-challenges http \
   --agree-tos \
   --non-interactive \
   -m "$ADMIN_EMAIL" \
-  -d "$FQDN"
+  -d "$FQDN" \
+  || die "Certbot failed"
 
 [[ "${NEED_LSWS_RESTART:-0}" == "1" ]] && systemctl start lsws
 
-log "SSL certificate issued successfully"
+rept "SSL certificate issued successfully"
 
-# --------------------------------------------------
-# NETWORK MONITOR (LOW RESOURCE)
-# --------------------------------------------------
-log "Installing vnStat"
-apt-get install -y vnstat
+# ==============================================================================
+# Network Monitor
+# ==============================================================================
+info "Configuring vnStat..."
 
-systemctl enable vnstat
-systemctl start vnstat
+systemctl enable --now vnstat
+
+rept "Network monitor enabled"
+
+# ==============================================================================
+# Cleanup
+# ==============================================================================
+info "Performing cleanup..."
 
 apt-get autoremove -y
 apt-get autoclean -y
 
-log "Network Monitor Installed successfully"
+unset HOSTNAME DOMAIN FQDN ADMIN_EMAIL SERVER_IP DNS_IP TIMEZONE
 
-# ==================================================
-# FINAL REPORT
-# ==================================================
-echo
-echo -e "\e[1;36m══════════════════════════════════════════════\e[0m"
-echo -e "\e[1;32m ✔ Hostname     : $FQDN\e[0m"
-echo -e "\e[1;32m ✔ SSL/TLS      : Issued\e[0m"
-echo -e "\e[1;32m ✔ Monitor      : vnStat\e[0m"
-echo -e "\e[1;36m══════════════════════════════════════════════\e[0m"
-echo
+rept "Cleanup completed"
 
-# ==================================================
-# CLEAN EXIT
-# ==================================================
-unset TIMEZONE
-unset HOSTNAME DOMAIN FQDN ADMIN_EMAIL
-unset SERVER_IP DNS_IP DEBIAN_FRONTEND
+# ==============================================================================
+# Final Summary
+# ==============================================================================
+info "══════════════════════════════════════════════"
+rept "Hostname : $FQDN"
+rept "SSL/TLS  : Active"
+rept "Monitor  : vnStat enabled"
+info "══════════════════════════════════════════════"
