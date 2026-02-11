@@ -199,13 +199,14 @@ rept "CA certificates refreshed"
 
 info "Updating package index..."
 apt-get update
+
 rept "APT update completed"
+rept "APT repository configuration completed"
 
 # ==============================================================================
 # Final Summary
 # ==============================================================================
 info "══════════════════════════════════════════════"
-rept "APT repository configuration completed"
 info "OS       : $PRETTY"
 info "Primary  : Official repositories"
 info "Fallback : Mirror repositories (IR)"
