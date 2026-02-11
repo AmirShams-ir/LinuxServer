@@ -1,33 +1,31 @@
 #!/usr/bin/env bash
 # -----------------------------------------------------------------------------
-# Description: This script performs mandatory base hosting setup on a fresh
-#              Linux VPS.
+# Description: Configure official APT repositories with prioritized fallback
+#              mirrors for Debian/Ubuntu VPS environments.
 #
 # Author: Amir Shams
 # GitHub: https://github.com/AmirShams-ir/LinuxServer
+#
+# License: See GitHub repository for license details.
 #
 # Disclaimer: This script is provided for educational and informational
 #             purposes only. Use it responsibly and in compliance with all
 #             applicable laws and regulations.
 #
-# Note: This script is designed to be SAFE, IDEMPOTENT, and NON-DESTRUCTIVE.
-#       Review before use. No application-level services are installed here.
+# Note: SAFE, IDEMPOTENT, and NON-DESTRUCTIVE (backup is created).
 # -----------------------------------------------------------------------------
 
-# ==============================================================================
-# Strict mode
-# ==============================================================================
 set -Eeuo pipefail
+IFS=$'\n\t'
 
 # ==============================================================================
-# Root / sudo handling
+# Root handling
 # ==============================================================================
 if [[ "${EUID}" -ne 0 ]]; then
   if command -v sudo >/dev/null 2>&1; then
-    echo "🔐 Root privileges required. Please enter sudo password..."
-    exec sudo -E bash "$0" "$@"
+    exec sudo --preserve-env=PATH bash "$0" "$@"
   else
-    echo "❌ ERROR: This script must be run as root."
+    printf "Root privileges required.\n"
     exit 1
   fi
 fi
@@ -35,33 +33,53 @@ fi
 # ==============================================================================
 # OS validation
 # ==============================================================================
-if [[ ! -f /etc/os-release ]] || \
-   ! grep -Eqi '^(ID=(debian|ubuntu)|ID_LIKE=.*(debian|ubuntu))' /etc/os-release; then
-  echo "❌ ERROR: Unsupported OS. Debian/Ubuntu only."
+if [[ -f /etc/os-release ]]; then
+  source /etc/os-release
+else
+  printf "ERROR: Cannot detect OS.\n"
+  exit 1
+fi
+
+if [[ "${ID}" != "debian" && "${ID}" != "ubuntu" && "${ID_LIKE:-}" != *"debian"* ]]; then
+  printf "ERROR: Debian/Ubuntu only.\n"
   exit 1
 fi
 
 # ==============================================================================
 # Logging
 # ==============================================================================
-LOG="/var/log/server-repository.log"
+LOG="/var/log/server-$(basename "$0" .sh).log"
 mkdir -p "$(dirname "$LOG")"
-touch "$LOG"
-exec > >(tee -a "$LOG") 2>&1
-echo "[✔] Logging enabled: $LOG"
+: > "$LOG"
+
+{
+  printf "============================================================\n"
+  printf " Script: %s\n" "$(basename "$0")"
+  printf " Started at: %s\n" "$(date '+%Y-%m-%d %H:%M:%S')"
+  printf " Hostname: %s\n" "$(hostname)"
+  printf "============================================================\n"
+} >> "$LOG"
+
+exec > >(tee -a "$LOG") 2> >(tee -a "$LOG" >&2)
+
+# ==============================================================================
+# Helper functions
+# ==============================================================================
+info() { printf "\e[34m%s\e[0m\n" "$*"; }
+rept() { printf "\e[32m[✔] %s\e[0m\n" "$*"; }
+warn() { printf "\e[33m[!] %s\e[0m\n" "$*"; }
+die()  { printf "\e[31m[✖] %s\e[0m\n" "$*"; exit 1; }
 
 # ==============================================================================
 # Banner
 # ==============================================================================
-echo -e "\e[1;36m═══════════════════════════════════════════\e[0m"
-echo -e " \e[1;33m✔ Repository Script Started\e[0m"
-echo -e "\e[1;36m═══════════════════════════════════════════\e[0m"
+info "═══════════════════════════════════════════"
+info "✔ Repository Script Started"
+info "═══════════════════════════════════════════"
 
-# --------------------------------------------------
-# OS detection
-# --------------------------------------------------
-source /etc/os-release
-
+# ==============================================================================
+# Variables
+# ==============================================================================
 OS_ID="$ID"
 OS_VER="$VERSION_ID"
 PRETTY="$PRETTY_NAME"
@@ -70,52 +88,38 @@ MAIN_LIST="/etc/apt/sources.list"
 IR_LIST="/etc/apt/sources.list.d/ir-mirror.list"
 PIN_FILE="/etc/apt/preferences.d/99-apt-priority"
 
-TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 cp -a "$MAIN_LIST" "${MAIN_LIST}.bak.${TIMESTAMP}"
 
-echo "[*] Detected OS: $PRETTY"
+info "Detected OS: $PRETTY"
 
-# --------------------------------------------------
-# Debian
-# --------------------------------------------------
+# ==============================================================================
+# Debian configuration
+# ==============================================================================
 if [[ "$OS_ID" == "debian" ]]; then
 
   case "$OS_VER" in
-    11)
-      CODENAME="bullseye"
-      COMPONENTS="main contrib non-free"
-      ;;
-    12)
-      CODENAME="bookworm"
-      COMPONENTS="main contrib non-free non-free-firmware"
-      ;;
-    *)
-      echo "ERROR: Unsupported Debian version: $OS_VER"
-      exit 1
-      ;;
+    11) CODENAME="bullseye"; COMPONENTS="main contrib non-free" ;;
+    12) CODENAME="bookworm"; COMPONENTS="main contrib non-free non-free-firmware" ;;
+    *)  die "Unsupported Debian version: $OS_VER" ;;
   esac
 
-  echo "[*] Configuring Debian $OS_VER ($CODENAME)"
+  info "Configuring Debian $OS_VER ($CODENAME)"
 
   cat > "$MAIN_LIST" <<EOF
-# Debian official repositories
 deb http://deb.debian.org/debian $CODENAME $COMPONENTS
 deb http://deb.debian.org/debian $CODENAME-updates $COMPONENTS
 deb http://security.debian.org/debian-security ${CODENAME}-security $COMPONENTS
 EOF
 
   cat > "$IR_LIST" <<EOF
-# Iranian fallback mirror
 deb http://repo.iut.ac.ir/debian $CODENAME $COMPONENTS
 deb http://repo.iut.ac.ir/debian $CODENAME-updates $COMPONENTS
 deb http://mirror.arvancloud.ir/debian $CODENAME $COMPONENTS
 deb http://mirror.arvancloud.ir/debian-security $CODENAME-security $COMPONENTS
 EOF
 
-# --------------------------------------------------
-# Debian APT pinning (Official > Iranian)
-# --------------------------------------------------
-cat > "$PIN_FILE" <<EOF
+  cat > "$PIN_FILE" <<EOF
 Package: *
 Pin: origin deb.debian.org
 Pin-Priority: 900
@@ -133,49 +137,33 @@ Pin: origin mirror.arvancloud.ir
 Pin-Priority: 100
 EOF
 
-echo "[OK] APT pinning rules applied."
-
-# --------------------------------------------------
-# Ubuntu
-# --------------------------------------------------
+# ==============================================================================
+# Ubuntu configuration
+# ==============================================================================
 elif [[ "$OS_ID" == "ubuntu" ]]; then
 
   case "$OS_VER" in
-    22.04)
-      CODENAME="jammy"
-      ;;
-    24.04)
-      CODENAME="noble"
-      ;;
-    *)
-      echo "ERROR: Unsupported Ubuntu version: $OS_VER"
-      exit 1
-      ;;
+    22.04) CODENAME="jammy" ;;
+    24.04) CODENAME="noble" ;;
+    *) die "Unsupported Ubuntu version: $OS_VER" ;;
   esac
 
-  echo "[*] Configuring Ubuntu $OS_VER ($CODENAME)"
+  info "Configuring Ubuntu $OS_VER ($CODENAME)"
 
   cat > "$MAIN_LIST" <<EOF
-# Ubuntu official repositories
 deb http://archive.ubuntu.com/ubuntu $CODENAME main restricted universe multiverse
 deb http://archive.ubuntu.com/ubuntu $CODENAME-updates main restricted universe multiverse
 deb http://archive.ubuntu.com/ubuntu $CODENAME-security main restricted universe multiverse
 EOF
 
   cat > "$IR_LIST" <<EOF
-# Iranian fallback mirror
 deb http://repo.iut.ac.ir/ubuntu $CODENAME main restricted universe multiverse
 deb http://repo.iut.ac.ir/ubuntu $CODENAME-updates main restricted universe multiverse
 deb http://repo.iut.ac.ir/ubuntu $CODENAME-security main restricted universe multiverse
 deb http://mirror.arvancloud.ir/ubuntu $CODENAME universe
 EOF
 
-# --------------------------------------------------
-# Ubuntu APT pinning (Official > Iranian)
-# --------------------------------------------------
-cat > "$PIN_FILE" <<EOF
-Package: *
-
+  cat > "$PIN_FILE" <<EOF
 Package: *
 Pin: origin archive.ubuntu.com
 Pin-Priority: 900
@@ -193,35 +181,35 @@ Pin: origin mirror.arvancloud.ir
 Pin-Priority: 100
 EOF
 
-echo "[OK] APT pinning rules applied."
-
 else
-  echo "ERROR: Unsupported OS: $OS_ID"
-  exit 1
+  die "Unsupported OS: $OS_ID"
 fi
 
-# --------------------------------------------------
-# Refresh CA & APT (script-safe)
-# --------------------------------------------------
+rept "APT repository configuration applied"
+rept "APT pinning rules applied"
+
+# ==============================================================================
+# Refresh CA & Update
+# ==============================================================================
+info "Refreshing CA certificates..."
 apt-get clean
 apt-get install --reinstall -y ca-certificates >/dev/null
 update-ca-certificates >/dev/null
+rept "CA certificates refreshed"
 
-echo "[OK] CA certificates refreshed."
-
-# --------------------------------------------------
-# Update & verify
-# --------------------------------------------------
+info "Updating package index..."
 apt-get update
+rept "APT update completed"
 
-echo
-echo -e "\e[1;36m══════════════════════════════════════════════\e[0m"
-echo -e "\e[1;33mAPT repository configuration completed\e[0m"
-echo -e "\e[1;33mOS       : $PRETTY\e[0m"
-echo -e "\e[1;33mPrimary  : Official repositories\e[0m"
-echo -e "\e[1;33mFallback : Mirror repositories (IR)\e[0m"
-echo -e "\e[1;36m══════════════════════════════════════════════\e[0m"
+# ==============================================================================
+# Final Summary
+# ==============================================================================
+info "══════════════════════════════════════════════"
+rept "APT repository configuration completed"
+info "OS       : $PRETTY"
+info "Primary  : Official repositories"
+info "Fallback : Mirror repositories (IR)"
+info "══════════════════════════════════════════════"
 
-echo
-echo -e "\e[1;36mVerification (apt policy bash):\e[0m"
+info "Verification (apt policy bash):"
 apt-cache policy bash | sed -n '1,15p'
