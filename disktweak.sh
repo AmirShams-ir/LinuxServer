@@ -1,32 +1,30 @@
 #!/usr/bin/env bash
 # -----------------------------------------------------------------------------
-# Description: This script performs mandatory base hosting setup on a fresh
-#              Linux VPS.
+# Description: Smart disk auto-expansion and quota bootstrap for Debian/Ubuntu VPS.
 #
 # Author: Amir Shams
 # GitHub: https://github.com/AmirShams-ir/LinuxServer
+#
+# License: See GitHub repository for license details.
 #
 # Disclaimer: This script is provided for educational and informational
 #             purposes only. Use it responsibly and in compliance with all
 #             applicable laws and regulations.
 #
-# Note: This script is designed to be SAFE, IDEMPOTENT, and NON-DESTRUCTIVE.
-#       Review before use. No application-level services are installed here.
+# Note: SAFE, IDEMPOTENT, and NON-DESTRUCTIVE.
 # -----------------------------------------------------------------------------
 
-# ==============================================================================
-# Strict mode
-# ==============================================================================
 set -Eeuo pipefail
+IFS=$'\n\t'
 
 # ==============================================================================
-# Root / sudo handling
+# Root handling
 # ==============================================================================
-if [[ "$EUID" -ne 0 ]]; then
+if [[ "${EUID}" -ne 0 ]]; then
   if command -v sudo >/dev/null 2>&1; then
-    exec sudo -E bash "$0" "$@"
+    exec sudo --preserve-env=PATH bash "$0" "$@"
   else
-    echo "❌ ERROR: This script must be run as root."
+    printf "Root privileges required.\n"
     exit 1
   fi
 fi
@@ -34,86 +32,97 @@ fi
 # ==============================================================================
 # OS validation
 # ==============================================================================
-if [[ ! -f /etc/os-release ]] || \
-   ! grep -Eqi '^(ID=(debian|ubuntu)|ID_LIKE=.*(debian|ubuntu))' /etc/os-release; then
-  echo "❌ ERROR: Unsupported OS. Debian/Ubuntu only."
+if [[ -f /etc/os-release ]]; then
+  source /etc/os-release
+else
+  printf "ERROR: Cannot detect OS.\n"
+  exit 1
+fi
+
+if [[ "${ID}" != "debian" && "${ID}" != "ubuntu" && "${ID_LIKE:-}" != *"debian"* ]]; then
+  printf "ERROR: Debian/Ubuntu only.\n"
   exit 1
 fi
 
 # ==============================================================================
 # Logging
 # ==============================================================================
-LOG="/var/log/server-disk.log"
+LOG="/var/log/server-$(basename "$0" .sh).log"
 mkdir -p "$(dirname "$LOG")"
-touch "$LOG"
-exec > >(tee -a "$LOG") 2>&1
+: > "$LOG"
 
-log()  { echo -e "\e[32m[✔] $1\e[0m"; }
-warn() { echo -e "\e[33m[!] $1\e[0m"; }
-die()  { echo -e "\e[31m[✖] $1\e[0m"; exit 1; }
+{
+  printf "============================================================\n"
+  printf " Script: %s\n" "$(basename "$0")"
+  printf " Started at: %s\n" "$(date '+%Y-%m-%d %H:%M:%S')"
+  printf " Hostname: %s\n" "$(hostname)"
+  printf "============================================================\n"
+} >> "$LOG"
+
+exec > >(tee -a "$LOG") 2> >(tee -a "$LOG" >&2)
+
+# ==============================================================================
+# Helper functions
+# ==============================================================================
+info() { printf "\e[34m%s\e[0m\n" "$*"; }
+rept() { printf "\e[32m[✔] %s\e[0m\n" "$*"; }
+warn() { printf "\e[33m[!] %s\e[0m\n" "$*"; }
+die()  { printf "\e[31m[✖] %s\e[0m\n" "$*"; exit 1; }
 
 # ==============================================================================
 # Banner
 # ==============================================================================
-echo -e "\e[1;36m═══════════════════════════════════════════\e[0m"
-echo -e " \e[1;33m✔ Disk Tweak Script Started\e[0m"
-echo -e "\e[1;36m═══════════════════════════════════════════\e[0m"
+info "═══════════════════════════════════════════"
+info "✔ Disk Tweak Script Started"
+info "═══════════════════════════════════════════"
 
 # ==============================================================================
-# CONFIG
+# Required tools
 # ==============================================================================
-VG_LV_PATH="/dev/mapper/ptr--vg-root"
+info "Checking required disk tools..."
 
-# ==============================================================================
-# Required disk tools (idempotent)
-# ==============================================================================
-log "Checking required disk tools..."
-
-REQUIRED_PKGS=(parted cloud-guest-utils lvm2)
+REQUIRED_PKGS=(parted cloud-guest-utils lvm2 quota)
 
 for pkg in "${REQUIRED_PKGS[@]}"; do
   if ! dpkg -s "$pkg" >/dev/null 2>&1; then
-    log "Installing $pkg..."
+    info "Installing $pkg..."
     apt-get update -qq
     apt-get install -y "$pkg"
   else
-    log "$pkg already installed"
+    rept "$pkg already installed"
   fi
 done
 
 # ==============================================================================
-# SMART DISK EXPANSION (AUTO-DETECT)
+# Disk detection
 # ==============================================================================
+info "Detecting root disk layout..."
 
-log "Detecting root disk layout..."
+ROOT_SRC="$(findmnt -no SOURCE /)"
+FS_TYPE="$(findmnt -no FSTYPE /)"
 
-ROOT_SRC=$(findmnt -no SOURCE /)
-FS_TYPE=$(findmnt -no FSTYPE /)
+info "Root source      : $ROOT_SRC"
+info "Filesystem type  : $FS_TYPE"
 
-log "Root source      : $ROOT_SRC"
-log "Filesystem type : $FS_TYPE"
-
-# ------------------------------------------------------------------------------
-# Case 1: LVM-based root (most common on VPS)
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# Case 1: LVM root
+# ==============================================================================
 if [[ "$ROOT_SRC" == /dev/mapper/* ]]; then
-  log "LVM-based root detected"
 
-  # Detect physical volume backing root VG
-  PV_DEV=$(pvs --noheadings -o pv_name 2>/dev/null | awk '{print $1}' | head -n1)
+  info "LVM-based root detected"
+
+  PV_DEV="$(pvs --noheadings -o pv_name 2>/dev/null | awk '{print $1}' | head -n1)"
 
   if [[ -z "$PV_DEV" ]]; then
     warn "No LVM physical volume detected. Skipping disk resize."
   else
-    log "Detected LVM PV: $PV_DEV"
-
-    log "Resizing physical volume..."
+    info "Resizing physical volume..."
     pvresize "$PV_DEV" || die "pvresize failed"
 
-    log "Extending logical volume..."
+    info "Extending logical volume..."
     lvextend -l +100%FREE "$ROOT_SRC" || die "lvextend failed"
 
-    log "Resizing filesystem..."
+    info "Resizing filesystem..."
     if [[ "$FS_TYPE" == "ext4" ]]; then
       resize2fs "$ROOT_SRC" || die "resize2fs failed"
     elif [[ "$FS_TYPE" == "xfs" ]]; then
@@ -123,101 +132,79 @@ if [[ "$ROOT_SRC" == /dev/mapper/* ]]; then
     fi
   fi
 
-# ------------------------------------------------------------------------------
-# Case 2: Direct partition root (non-LVM)
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# Case 2: Direct partition
+# ==============================================================================
 elif [[ "$ROOT_SRC" =~ ^/dev/sd[a-z][0-9]+$ || "$ROOT_SRC" =~ ^/dev/vd[a-z][0-9]+$ ]]; then
-  log "Direct partition root detected"
+
+  info "Direct partition root detected"
 
   DISK_DEV="/dev/$(lsblk -no PKNAME "$ROOT_SRC")"
   PART_NUM="$(echo "$ROOT_SRC" | grep -o '[0-9]*$')"
 
-  log "Disk device : $DISK_DEV"
-  log "Partition  : $PART_NUM"
+  info "Growing partition..."
 
-  log "Growing partition..."
-if growpart "$DISK_DEV" "$PART_NUM"; then
-  log "Partition grown successfully"
-else
-  warn "Partition cannot be grown (already at maximum size). Skipping."
-fi
+  if growpart "$DISK_DEV" "$PART_NUM"; then
+    rept "Partition grown successfully"
+  else
+    warn "Partition already at maximum size"
+  fi
 
-log "Resizing filesystem..."
-if [[ "$FS_TYPE" == "ext4" ]]; then
-  resize2fs "$ROOT_SRC" || die "resize2fs failed"
-elif [[ "$FS_TYPE" == "xfs" ]]; then
-  xfs_growfs / || die "xfs_growfs failed"
-else
-  warn "Unsupported filesystem for resize: $FS_TYPE"
-fi
+  info "Resizing filesystem..."
 
-# ------------------------------------------------------------------------------
-# Case 3: Unknown / unsupported layout
-# ------------------------------------------------------------------------------
+  if [[ "$FS_TYPE" == "ext4" ]]; then
+    resize2fs "$ROOT_SRC" || die "resize2fs failed"
+  elif [[ "$FS_TYPE" == "xfs" ]]; then
+    xfs_growfs / || die "xfs_growfs failed"
+  else
+    warn "Unsupported filesystem for resize: $FS_TYPE"
+  fi
+
 else
   warn "Unknown root layout ($ROOT_SRC). Skipping disk resize."
 fi
 
-log "Disk expansion phase completed"
+rept "Disk expansion phase completed"
 df -h /
-
 
 # ==============================================================================
 # Quota bootstrap
 # ==============================================================================
+info "Bootstrapping disk quota..."
 
-log "Bootstrapping disk quota..."
-
-# --- Install quota tools (idempotent) ---
-if ! command -v setquota >/dev/null 2>&1; then
-  log "Installing quota package..."
-  apt-get update -qq
-  apt-get install -y quota
-else
-  log "Quota package already installed"
-fi
-
-# --- Ensure ext4 (classic quota only) ---
 [[ "$FS_TYPE" == "ext4" ]] || die "Classic quota supported only on ext4"
 
-# --- Ensure quota options in fstab ---
 if ! grep -E '^[^#].+\s+/\s+ext4\s+.*usrquota' /etc/fstab; then
-  log "Enabling usrquota,grpquota in /etc/fstab..."
+  info "Enabling usrquota,grpquota in /etc/fstab..."
 
   sed -i -E \
     's|^([^#].+\s+/\s+ext4\s+)([^ ]+)|\1\2,usrquota,grpquota|' \
     /etc/fstab
 
   warn "fstab updated. Reboot REQUIRED."
-  warn "Please reboot the server and re-run disktweak.sh"
+  warn "Please reboot and re-run disktweak.sh"
   exit 0
-else
-  log "Quota options already present in fstab"
 fi
 
-# --- Verify mount options ---
 mount | grep -q 'on / .*usrquota' || die "Quota not active on / (reboot missing?)"
-log "Quota mount options verified"
+rept "Quota mount options verified"
 
-# --- Initialize quota files ---
-log "Initializing quota files..."
+info "Initializing quota files..."
 quotaoff -avug >/dev/null 2>&1 || true
 quotacheck -avugm
 quotaon -avug
 
-log "Disk quota successfully enabled"
+rept "Disk quota successfully enabled"
 
 # ==============================================================================
-# Final report
+# Final Report
 # ==============================================================================
-echo
-echo -e "\e[1;36m══════════════════════════════════════════════════\e[0m"
-echo -e " \e[1;32m✔ Disk tweak completed successfully\e[0m"
-echo -e " \e[1;32m✔ Disk expanded and quota ready\e[0m"
-echo -e "\e[1;36m══════════════════════════════════════════════════\e[0m"
-echo
+info "══════════════════════════════════════════════════"
+info "Disk tweak completed successfully"
+info "Disk expanded and quota ready"
+info "══════════════════════════════════════════════════"
 
-# --------------------------------------------------
-# Cleanup (safe mode)
-# --------------------------------------------------
-unset LOG DISK_QUOTA_MB
+# ==============================================================================
+# Cleanup
+# ==============================================================================
+unset LOG ROOT_SRC FS_TYPE PV_DEV DISK_DEV PART_NUM
