@@ -1,50 +1,38 @@
 #!/usr/bin/env bash
 # -----------------------------------------------------------------------------
-# Description: This script performs mandatory base hosting setup on a fresh
-#              Linux VPS.
-#
+# Description: Bootstrap and harden a fresh Debian/Ubuntu VPS.
 # Author: Amir Shams
 # GitHub: https://github.com/AmirShams-ir/LinuxServer
-#
 # License: See GitHub repository for license details.
-#
-# Disclaimer: This script is provided for educational and informational
-#             purposes only. Use it responsibly and in compliance with all
-#             applicable laws and regulations.
-#
-# Note: This script is designed to be SAFE, IDEMPOTENT, and NON-DESTRUCTIVE.
-#       Review before use. No application-level services are installed here.
 # -----------------------------------------------------------------------------
 
 set -Eeuo pipefail
 IFS=$'\n\t'
 
 # ==============================================================================
-# Root / sudo handling
+# Root Handling
 # ==============================================================================
 if [[ "${EUID}" -ne 0 ]]; then
   if command -v sudo >/dev/null 2>&1; then
     exec sudo --preserve-env=PATH bash "$0" "$@"
   else
-    printf "This script requires root privileges.\n"
+    printf "Root privileges required.\n"
     exit 1
   fi
 fi
 
 # ==============================================================================
-# OS validation
+# OS Validation
 # ==============================================================================
 if [[ -f /etc/os-release ]]; then
   source /etc/os-release
 else
-  printf "ERROR: Cannot detect OS.\n"
+  printf "Cannot detect OS.\n"
   exit 1
 fi
 
-if [[ "${ID}" != "debian" && "${ID}" != "ubuntu" && "${ID_LIKE:-}" != *"debian"* ]]; then
-  printf "ERROR: Debian/Ubuntu only.\n"
-  exit 1
-fi
+[[ "${ID}" == "debian" || "${ID}" == "ubuntu" || "${ID_LIKE:-}" == *"debian"* ]] \
+  || { printf "Debian/Ubuntu only.\n"; exit 1; }
 
 # ==============================================================================
 # Logging
@@ -64,12 +52,16 @@ mkdir -p "$(dirname "$LOG")"
 exec > >(tee -a "$LOG") 2> >(tee -a "$LOG" >&2)
 
 # ==============================================================================
-# Helper Functions
+# Helpers
 # ==============================================================================
 info() { printf "\e[34m%s\e[0m\n" "$*"; }
 rept() { printf "\e[32m[✔] %s\e[0m\n" "$*"; }
 warn() { printf "\e[33m[!] %s\e[0m\n" "$*"; }
 die()  { printf "\e[31m[✖] %s\e[0m\n" "$*"; exit 1; }
+
+has_systemd() {
+  [[ -d /run/systemd/system ]] && command -v systemctl >/dev/null 2>&1
+}
 
 # ==============================================================================
 # Banner
@@ -79,34 +71,15 @@ info "✔ Bootstrap Script Started"
 info "═══════════════════════════════════════════"
 
 # ==============================================================================
-# Helper: systemd detection
-# ==============================================================================
-has_systemd() {
-  [[ -d /run/systemd/system ]] && command -v systemctl >/dev/null 2>&1
-}
-
-# ==============================================================================
-# Status flags
-# ==============================================================================
-STATUS_TIMEZONE=false
-STATUS_LOCALE=false
-STATUS_UPDATE=false
-STATUS_PACKAGES=false
-STATUS_SWAP=false
-STATUS_SYSCTL=false
-STATUS_JOURNALD=false
-STATUS_AUTOUPDATE=false
-STATUS_BBR=false
-
-# ==============================================================================
 # Timezone & Locale
 # ==============================================================================
-info "Configuring timezone & locale..."
+info "Starting timezone and locale configuration..."
 
 if has_systemd; then
   CURRENT_TZ="$(timedatectl show -p Timezone --value 2>/dev/null || true)"
   [[ "$CURRENT_TZ" != "UTC" ]] && timedatectl set-timezone UTC
-  STATUS_TIMEZONE=true
+else
+  warn "Systemd not detected, skipping timezone enforcement"
 fi
 
 LOCALE="en_US.UTF-8"
@@ -117,50 +90,59 @@ fi
 
 update-locale LANG="$LOCALE" LC_ALL="$LOCALE"
 export LANG="$LOCALE" LC_ALL="$LOCALE"
-STATUS_LOCALE=true
+
+rept "Timezone and locale configuration completed"
 
 # ==============================================================================
 # System Update
 # ==============================================================================
-info "Updating system..."
-apt update -y
-apt upgrade -y
-apt autoremove -y
-apt autoclean -y
-STATUS_UPDATE=true
+info "Starting system update..."
+
+apt-get update || die "apt update failed"
+apt-get upgrade -y || die "apt upgrade failed"
+apt-get autoremove -y
+apt-get autoclean -y
+
+rept "System update completed"
 
 # ==============================================================================
 # Essential Packages
 # ==============================================================================
-info "Installing essential packages..."
-apt install -y \
+info "Starting essential package installation..."
+
+apt-get install -y \
   sudo curl wget git dialog ca-certificates gnupg lsb-release \
   htop zip unzip net-tools openssl build-essential \
-  bash-completion unattended-upgrades
+  bash-completion unattended-upgrades \
+  || die "Package installation failed"
 
-STATUS_PACKAGES=true
+rept "Essential packages installed"
 
-info "Enabling automatic security updates..."
-dpkg-reconfigure -f noninteractive unattended-upgrades
-STATUS_AUTOUPDATE=true
+info "Configuring automatic security updates..."
+dpkg-reconfigure -f noninteractive unattended-upgrades \
+  || warn "Unattended-upgrades configuration skipped"
+
+rept "Automatic security updates configured"
 
 # ==============================================================================
-# Swap
+# Swap Configuration
 # ==============================================================================
-info "Checking swap..."
+info "Starting swap configuration..."
 
 if ! swapon --show | grep -q swap; then
   RAM_MB="$(free -m | awk '/Mem:/ {print $2}')"
   [[ "$RAM_MB" -lt 2048 ]] && SWAP_SIZE="2G" || SWAP_SIZE="1G"
 
-  fallocate -l "$SWAP_SIZE" /swapfile
+  fallocate -l "$SWAP_SIZE" /swapfile || die "Swap allocation failed"
   chmod 600 /swapfile
-  mkswap /swapfile
+  mkswap /swapfile >/dev/null
   swapon /swapfile
   grep -q "/swapfile" /etc/fstab || echo "/swapfile none swap sw 0 0" >> /etc/fstab
-fi
 
-STATUS_SWAP=true
+  rept "Swap created and enabled"
+else
+  warn "Swap already active"
+fi
 
 # ==============================================================================
 # Sysctl Baseline
@@ -175,8 +157,9 @@ net.ipv4.conf.all.accept_redirects=0
 net.ipv4.conf.all.send_redirects=0
 EOF
 
-sysctl --system >/dev/null
-STATUS_SYSCTL=true
+sysctl --system >/dev/null || die "Sysctl reload failed"
+
+rept "Sysctl baseline applied"
 
 # ==============================================================================
 # TCP BBR
@@ -191,7 +174,7 @@ net.core.default_qdisc=fq
 net.ipv4.tcp_congestion_control=bbr
 EOF
   sysctl --system >/dev/null
-  STATUS_BBR=true
+  rept "TCP BBR enabled"
 else
   warn "BBR not supported on this kernel"
 fi
@@ -201,51 +184,11 @@ fi
 # ==============================================================================
 info "Configuring journald limits..."
 
-mkdir -p /etc/systemd/journald.conf.d
-
-cat <<EOF >/etc/systemd/journald.conf.d/limit.conf
+if has_systemd; then
+  mkdir -p /etc/systemd/journald.conf.d
+  cat <<EOF >/etc/systemd/journald.conf.d/limit.conf
 [Journal]
 SystemMaxUse=200M
 RuntimeMaxUse=100M
 EOF
-
-has_systemd && systemctl restart systemd-journald
-STATUS_JOURNALD=true
-
-# ==============================================================================
-# Final Report
-# ==============================================================================
-report() {
-  local label="$1" status="$2"
-  if [[ "$status" == true ]]; then
-    rept "$label"
-  else
-    warn "$label (skipped)"
-  fi
-}
-
-info "=================================================="
-info "BOOTSTRAP EXECUTION REPORT"
-info "=================================================="
-
-report "Timezone configuration"        "$STATUS_TIMEZONE"
-report "Locale configuration"          "$STATUS_LOCALE"
-report "System update & upgrade"       "$STATUS_UPDATE"
-report "Essential packages"            "$STATUS_PACKAGES"
-report "Swap configuration"            "$STATUS_SWAP"
-report "Sysctl baseline"               "$STATUS_SYSCTL"
-report "Journald limits"               "$STATUS_JOURNALD"
-report "Automatic security updates"    "$STATUS_AUTOUPDATE"
-report "TCP BBR congestion control"    "$STATUS_BBR"
-
-info "══════════════════════════════════════════════════"
-rept "Bootstrap completed successfully"
-rept "System is clean, updated & production-ready"
-info "══════════════════════════════════════════════════"
-
-# ==============================================================================
-# Cleanup
-# ==============================================================================
-unset LOG CURRENT_TZ LOCALE RAM_MB SWAP_SIZE
-unset STATUS_TIMEZONE STATUS_LOCALE STATUS_UPDATE STATUS_PACKAGES
-unset STATUS_SWAP STATUS_SYSCTL STATUS_JOURNALD STATUS_AUTOUPDATE STATUS_BBR
+  systemctl restar
