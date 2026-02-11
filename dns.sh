@@ -46,15 +46,20 @@ LOG="/var/log/server-dns.log"
 mkdir -p "$(dirname "$LOG")"
 exec > >(tee -a "$LOG") 2>&1
 
-log() { echo -e "\e[32m[✔] $1\e[0m"; }
-die() { echo -e "\e[31m[✖] $1\e[0m"; }
+# ==============================================================================
+# Hellper
+# ==============================================================================
+info() { echo -e "\e[34m $1\e[0m"; }
+rept() { echo -e "\e[32m[✔] $1\e[0m"; }
+warn() { echo -e "\e[33m[!] $1\e[0m"; }
+dies() { echo -e "\e[31m[✖] $1\e[0m"; }
 
 # ==============================================================================
 # Banner
 # ==============================================================================
-echo -e "\e[1;36m═══════════════════════════════════════════\e[0m"
-echo -e " \e[1;33m✔ Smart DNS Server Script Started\e[0m"
-echo -e "\e[1;36m═══════════════════════════════════════════\e[0m"
+info "═══════════════════════════════════════════"
+info "✔ Smart DNS Server Script Started"
+info "═══════════════════════════════════════════"
 
 # ==============================================================================
 # DNS CONFIG
@@ -80,13 +85,13 @@ measure_latency() {
 INTL_SORTED=()
 IR_SORTED=()
 
-log "Testing latency for international DNS servers..."
+rept "Testing latency for international DNS servers..."
 for d in "${INTL_DNS[@]}"; do
   l=$(measure_latency "$d")
   [[ -n "$l" ]] && INTL_SORTED+=("$l:$d") && echo "  ✔ $d → ${l} ms"
 done
 
-log "Testing latency for Iranian DNS servers..."
+rept "Testing latency for Iranian DNS servers..."
 for d in "${IR_DNS[@]}"; do
   l=$(measure_latency "$d")
   [[ -n "$l" ]] && IR_SORTED+=("$l:$d") && echo "  ✔ $d → ${l} ms"
@@ -96,7 +101,7 @@ if [[ "${#INTL_SORTED[@]}" -gt 0 ]]; then
   DNS_PRIMARY=$(printf "%s\n" "${INTL_SORTED[@]}" | sort -n | cut -d: -f2)
   DNS_FALLBACK=$(printf "%s\n" "${IR_SORTED[@]}" | sort -n | cut -d: -f2)
 else
-  die "[!] National internet mode detected"
+  warn "National internet mode detected"
   DNS_PRIMARY=$(printf "%s\n" "${IR_SORTED[@]}" | sort -n | cut -d: -f2)
   DNS_FALLBACK=("${INTL_DNS[@]}")
 fi
@@ -106,7 +111,7 @@ fi
 # ==============================================================================
 # APPLY DNS
 # ==============================================================================
-log "Applying DNS configuration"
+rept "Applying DNS configuration"
 
 if $IS_UBUNTU && command -v resolvectl >/dev/null 2>&1; then
   mkdir -p /etc/systemd/resolved.conf.d
@@ -137,7 +142,7 @@ options edns0
 EOF
 fi
 
-log "DNS configured successfully"
+rept "DNS configured successfully"
 
 # ==============================================================================
 # CLEANUP
@@ -145,22 +150,17 @@ log "DNS configured successfully"
 apt-get autoremove -y
 apt-get autoclean -y
 unset INTL_DNS IR_DNS INTL_SORTED IR_SORTED DNS_PRIMARY DNS_FALLBACK IS_UBUNTU IS_DEBIAN
-log "Cleanup successfully"
+rept "Cleanup successfully"
 
 # ==============================================================================
 # REPORT
 # ==============================================================================
-echo
-echo -e "\e[1;36m══════════════════════════════════════════════\e[0m"
-echo -e "\e[1;32m ✔ Smart DNS Resolver : ACTIVE\e[0m"
-echo -e "\e[1;36m══════════════════════════════════════════════\e[0m"
-echo
+info "═══════════════════════════════════════════"
+info "✔ Smart DNS Resolver : ACTIVATED"
+info "═══════════════════════════════════════════"
 
 if command -v resolvectl >/dev/null 2>&1; then
   resolvectl status
 else
   cat /etc/resolv.conf
 fi
-log "══════════════════════════════════════════════"
-log "a"
-die "b"
