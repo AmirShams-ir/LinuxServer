@@ -1,126 +1,145 @@
 #!/usr/bin/env bash
 # -----------------------------------------------------------------------------
-# Description: This script performs mandatory base hosting setup on a fresh
-#              Linux VPS.
-#
+# Description: Net Application Bootstrap (Nginx + PHP + MariaDB + SSL)
 # Author: Amir Shams
 # GitHub: https://github.com/AmirShams-ir/LinuxServer
-#
-# Disclaimer: This script is provided for educational and informational
-#             purposes only. Use it responsibly and in compliance with all
-#             applicable laws and regulations.
-#
-# Note: This script is designed to be SAFE, IDEMPOTENT, and NON-DESTRUCTIVE.
-#       Review before use. No application-level services are installed here.
+# License: See GitHub repository for license details.
 # -----------------------------------------------------------------------------
 
 set -Eeuo pipefail
+IFS=$'\n\t'
 
 # ==============================================================================
-# Root handling
+# Root Handling
 # ==============================================================================
-if [[ $EUID -ne 0 ]]; then
-  exec sudo -E bash "$0" "$@"
+if [[ "${EUID}" -ne 0 ]]; then
+  if command -v sudo >/dev/null 2>&1; then
+    exec sudo -E bash "$0" "$@"
+  else
+    printf "Root privileges required.\n"
+    exit 1
+  fi
 fi
+
+# ==============================================================================
+# OS Validation
+# ==============================================================================
+if [[ -f /etc/os-release ]]; then
+  source /etc/os-release
+else
+  printf "Cannot detect OS.\n"
+  exit 1
+fi
+
+[[ "${ID}" == "debian" || "${ID}" == "ubuntu" || "${ID_LIKE:-}" == *"debian"* ]] \
+  || { printf "Debian/Ubuntu only.\n"; exit 1; }
+
+CODENAME="${VERSION_CODENAME:-$(lsb_release -sc 2>/dev/null || true)}"
 
 # ==============================================================================
 # Logging
 # ==============================================================================
-LOG="/var/log/server-netstrap.log"
+LOG="/var/log/server-$(basename "$0" .sh).log"
 mkdir -p "$(dirname "$LOG")"
-exec > >(tee -a "$LOG") 2>&1
+: > "$LOG"
 
-log() { echo -e "\e[32m[✔] $1\e[0m"; }
-die() { echo -e "\e[31m[✖] $1\e[0m"; exit 1; }
+{
+  printf "============================================================\n"
+  printf " Script: %s\n" "$(basename "$0")"
+  printf " Started at: %s\n" "$(date '+%Y-%m-%d %H:%M:%S')"
+  printf " Hostname: %s\n" "$(hostname)"
+  printf "============================================================\n"
+} >> "$LOG"
+
+exec > >(tee -a "$LOG") 2> >(tee -a "$LOG" >&2)
 
 # ==============================================================================
-# OS validation
+# Helpers
 # ==============================================================================
-. /etc/os-release
-[[ "$ID" =~ ^(debian|ubuntu)$ ]] || die "Unsupported OS"
-
-CODENAME="$(lsb_release -sc)"
-log "Detected OS: $PRETTY_NAME ($CODENAME)"
+info() { printf "\e[34m%s\e[0m\n" "$*"; }
+rept() { printf "\e[32m[✔] %s\e[0m\n" "$*"; }
+warn() { printf "\e[33m[!] %s\e[0m\n" "$*"; }
+die()  { printf "\e[31m[✖] %s\e[0m\n" "$*"; exit 1; }
 
 # ==============================================================================
 # Banner
 # ==============================================================================
-echo -e "\e[1;36m═══════════════════════════════════════════\e[0m"
-echo -e " \e[1;33m✔ Net Application install Script Started\e[0m"
-echo -e "\e[1;36m═══════════════════════════════════════════\e[0m"
+info "═══════════════════════════════════════════"
+info "✔ Net Application Bootstrap Started"
+info "═══════════════════════════════════════════"
 
 # ==============================================================================
-# User input
+# User Input
 # ==============================================================================
+info "Collecting configuration input..."
+
 read -rp "Enter domain (example.com): " DOMAIN
+[[ "$DOMAIN" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]] || die "Invalid domain"
+
 WEBROOT="/var/www/$DOMAIN"
 
+rept "Input validated"
+
 # ==============================================================================
-# Base system
+# Base System Packages
 # ==============================================================================
-log "Updating system"
-apt update -y
-apt install -y \
+info "Installing base packages..."
+
+apt-get update -y
+apt-get install -y \
   ca-certificates curl gnupg lsb-release unzip \
-  software-properties-common ufw
+  software-properties-common ufw \
+  nginx certbot python3-certbot-nginx \
+  mariadb-server \
+  || die "Base package installation failed"
 
-# ==============================================================================
-# NGINX
-# ==============================================================================
-log "Installing Nginx"
-apt install -y nginx
 systemctl enable --now nginx
+systemctl enable --now mariadb
+
+rept "Base packages installed"
 
 # ==============================================================================
-# CERTBOT
+# PHP Installation (Official → SURY Fallback)
 # ==============================================================================
-log "Installing Certbot"
-apt install -y certbot python3-certbot-nginx
+info "Installing PHP..."
 
-# ==============================================================================
-# WEBROOT
-# ==============================================================================
-log "Creating webroot"
-mkdir -p "$WEBROOT"
-chown -R www-data:www-data "$WEBROOT"
-
-# ==============================================================================
-# PHP INSTALL (SMART)
-# ==============================================================================
-install_php_official() {
-  log "Trying PHP from OFFICIAL repository"
-  apt install -y php php-fpm php-cli php-mysql php-curl php-mbstring \
-    php-xml php-zip php-gd php-intl php-opcache php-mysqli
+install_php() {
+  apt-get install -y \
+    php php-fpm php-cli php-mysql php-curl php-mbstring \
+    php-xml php-zip php-gd php-intl php-opcache
 }
 
-enable_sury() {
-  log "Enabling SURY repository"
-  curl -fsSL https://packages.sury.org/php/apt.gpg \
-    | gpg --dearmor -o /usr/share/keyrings/php-sury.gpg
-  echo "deb [signed-by=/usr/share/keyrings/php-sury.gpg] https://packages.sury.org/php/ $CODENAME main" \
-    > /etc/apt/sources.list.d/php-sury.list
-  apt update
-}
-
-if install_php_official; then
+if install_php; then
   PHP_SOURCE="official"
 else
-  log "Official PHP failed – fallback to SURY"
-  enable_sury
-  install_php_official
+  warn "Official PHP failed, enabling SURY repository"
+
+  curl -fsSL https://packages.sury.org/php/apt.gpg \
+    | gpg --dearmor -o /usr/share/keyrings/php-sury.gpg
+
+  echo "deb [signed-by=/usr/share/keyrings/php-sury.gpg] \
+https://packages.sury.org/php/ $CODENAME main" \
+    > /etc/apt/sources.list.d/php-sury.list
+
+  apt-get update
+  install_php || die "PHP installation failed"
   PHP_SOURCE="sury"
 fi
 
 PHP_VERSION="$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')"
 PHP_SOCK="/run/php/php${PHP_VERSION}-fpm.sock"
 
-systemctl enable --now php${PHP_VERSION}-fpm
-log "PHP $PHP_VERSION installed from $PHP_SOURCE"
+systemctl enable --now "php${PHP_VERSION}-fpm"
+
+rept "PHP $PHP_VERSION installed from $PHP_SOURCE"
 
 # ==============================================================================
-# PHP HARDENING
+# PHP Hardening
 # ==============================================================================
+info "Applying PHP hardening..."
+
 PHP_INI="/etc/php/${PHP_VERSION}/fpm/php.ini"
+
 sed -i \
   -e 's/^;*expose_php.*/expose_php = Off/' \
   -e 's/^;*display_errors.*/display_errors = Off/' \
@@ -131,13 +150,21 @@ sed -i \
   -e 's/^;*cgi.fix_pathinfo.*/cgi.fix_pathinfo = 0/' \
   "$PHP_INI"
 
-systemctl reload php${PHP_VERSION}-fpm
+systemctl reload "php${PHP_VERSION}-fpm"
+
+rept "PHP hardened"
 
 # ==============================================================================
-# NGINX VHOST (PHP-AWARE)
+# Nginx Virtual Host
 # ==============================================================================
-log "Creating Nginx vhost"
-cat > /etc/nginx/sites-available/$DOMAIN <<EOF
+info "Configuring Nginx virtual host..."
+
+[[ -f "/etc/nginx/sites-available/$DOMAIN" ]] && die "Vhost already exists"
+
+mkdir -p "$WEBROOT"
+chown -R www-data:www-data "$WEBROOT"
+
+cat > "/etc/nginx/sites-available/$DOMAIN" <<EOF
 server {
   listen 80;
   server_name $DOMAIN;
@@ -155,93 +182,78 @@ server {
 }
 EOF
 
-ln -sf /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/
+ln -s "/etc/nginx/sites-available/$DOMAIN" \
+      "/etc/nginx/sites-enabled/$DOMAIN"
+
 rm -f /etc/nginx/sites-enabled/default
-nginx -t && systemctl reload nginx
+
+nginx -t || die "Nginx configuration test failed"
+systemctl reload nginx
+
+rept "Nginx virtual host configured"
 
 # ==============================================================================
-# SSL
+# SSL Certificate
 # ==============================================================================
-log "Issuing SSL certificate"
-certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos \
-  -m admin@"$DOMAIN" --redirect
+info "Issuing SSL certificate..."
+
+if certbot --nginx -d "$DOMAIN" \
+  --non-interactive --agree-tos \
+  -m "admin@$DOMAIN" --redirect; then
+  rept "SSL certificate installed"
+else
+  warn "SSL issuance failed"
+fi
 
 # ==============================================================================
-# MARIADB
+# phpMyAdmin
 # ==============================================================================
-log "Installing MariaDB"
-apt install -y mariadb-server
-systemctl enable --now mariadb
+info "Installing phpMyAdmin..."
 
-mysql <<'EOF'
-ALTER USER 'root'@'localhost' IDENTIFIED VIA unix_socket;
-DROP DATABASE IF EXISTS test;
-FLUSH PRIVILEGES;
-EOF
-
-# ==============================================================================
-# PHPMYADMIN (SMART)
-# ==============================================================================
-log "Installing phpMyAdmin"
 echo "phpmyadmin phpmyadmin/dbconfig-install boolean true" | debconf-set-selections
 echo "phpmyadmin phpmyadmin/reconfigure-webserver multiselect none" | debconf-set-selections
-apt install -y phpmyadmin
+
+apt-get install -y phpmyadmin || warn "phpMyAdmin install failed"
 
 ln -sf /usr/share/phpmyadmin /var/www/phpmyadmin
 
-cat > /etc/nginx/snippets/phpmyadmin.conf <<EOF
-location /phpmyadmin {
-  root /var/www;
-  index index.php;
-  location ~ \.php\$ {
-    include snippets/fastcgi-php.conf;
-    fastcgi_pass unix:$PHP_SOCK;
-  }
-}
-EOF
-
-systemctl reload nginx
+rept "phpMyAdmin configured"
 
 # ==============================================================================
-# FIREWALL
+# Firewall
 # ==============================================================================
-log "Configuring firewall"
+info "Configuring firewall..."
+
 ufw allow OpenSSH
 ufw allow 'Nginx Full'
 ufw --force enable
 
+rept "Firewall configured"
+
 # ==============================================================================
-# CLEANUP
+# Cleanup
 # ==============================================================================
-apt autoremove -y --purge
-apt autoclean -y
-apt clean
-rm -rf /tmp/*
-rm -rf /var/tmp/*
-journalctl --vacuum-time=7d || true
-if [[ -d /var/lib/php/sessions ]]; then
-  find /var/lib/php/sessions -type f -mtime +2 -delete
-fi
-rm -f /root/.bash_history
-history -c || true
+info "Performing cleanup..."
+
+apt-get autoremove -y
+apt-get autoclean -y
+
 chown -R www-data:www-data /var/www
 find /var/www -type d -exec chmod 755 {} \;
 find /var/www -type f -exec chmod 644 {} \;
-sync
 
-log "Cleanup completed ✅"
+rept "Cleanup completed"
 
 # ==============================================================================
-# FINAL REPORT
+# Final Summary
 # ==============================================================================
-echo -e "\n\e[1;36m══════════════════════════════════════════════\e[0m"
-echo -e " \e[1;32m✔ OS         : $PRETTY_NAME\e[0m"
-echo -e " \e[1;32m✔ PHP        : $PHP_VERSION ($PHP_SOURCE)\e[0m"
-echo -e " \e[1;32m✔ PHP-FPM    : $PHP_SOCK\e[0m"
-echo -e " \e[1;32m✔ Nginx      : Installed\e[0m"
-echo -e " \e[1;32m✔ MariaDB    : Installed\e[0m"
-echo -e " \e[1;32m✔ phpMyAdmin : /phpmyadmin\e[0m"
-echo -e " \e[1;32m✔ SSL        : Enabled\e[0m"
-echo -e "\e[1;36m══════════════════════════════════════════════\e[0m"
+info "══════════════════════════════════════════════"
+rept "OS         : $PRETTY_NAME"
+rept "PHP        : $PHP_VERSION ($PHP_SOURCE)"
+rept "Nginx      : Installed"
+rept "MariaDB    : Installed"
+rept "SSL        : Configured"
+rept "phpMyAdmin : /phpmyadmin"
+info "══════════════════════════════════════════════"
 
-unset HISTFILE PRETTY_NAME PHP_VERSION PHP_SOURCE PHP_SOCK
+unset DOMAIN PHP_VERSION PHP_SOURCE PHP_SOCK WEBROOT
