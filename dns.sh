@@ -80,13 +80,13 @@ measure_latency() {
 INTL_SORTED=()
 IR_SORTED=()
 
-echo "[✔] Testing latency for international DNS servers..."
+log "[✔] Testing latency for international DNS servers..."
 for d in "${INTL_DNS[@]}"; do
   l=$(measure_latency "$d")
   [[ -n "$l" ]] && INTL_SORTED+=("$l:$d") && echo "  ✔ $d → ${l} ms"
 done
 
-echo "[✔] Testing latency for Iranian DNS servers..."
+log "[✔] Testing latency for Iranian DNS servers..."
 for d in "${IR_DNS[@]}"; do
   l=$(measure_latency "$d")
   [[ -n "$l" ]] && IR_SORTED+=("$l:$d") && echo "  ✔ $d → ${l} ms"
@@ -106,7 +106,7 @@ fi
 # ==============================================================================
 # APPLY DNS
 # ==============================================================================
-echo "[✔] Applying DNS configuration"
+log "[✔] Applying DNS configuration"
 
 if $IS_UBUNTU && command -v resolvectl >/dev/null 2>&1; then
   mkdir -p /etc/systemd/resolved.conf.d
