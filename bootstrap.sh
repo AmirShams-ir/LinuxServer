@@ -50,9 +50,7 @@ fi
 # Logging
 # ==============================================================================
 LOG="/var/log/server-$(basename "$0" .sh).log"
-
 mkdir -p "$(dirname "$LOG")"
-
 : > "$LOG"
 
 {
@@ -88,7 +86,7 @@ has_systemd() {
 }
 
 # ==============================================================================
-# Status flags (for final report)
+# Status flags
 # ==============================================================================
 STATUS_TIMEZONE=false
 STATUS_LOCALE=false
@@ -101,17 +99,9 @@ STATUS_AUTOUPDATE=false
 STATUS_BBR=false
 
 # ==============================================================================
-# OS validation
+# Timezone & Locale
 # ==============================================================================
-if ! grep -Eqi '^(ID=(ubuntu|debian)|ID_LIKE=.*(debian|ubuntu))' /etc/os-release; then
-  echo "ERROR: Debian/Ubuntu only."
-  exit 1
-fi
-
-# ==============================================================================
-# Timezone & Locale (FORCED)
-# ==============================================================================
-echo "[*] Configuring timezone & locale..."
+info "Configuring timezone & locale..."
 
 if has_systemd; then
   CURRENT_TZ="$(timedatectl show -p Timezone --value 2>/dev/null || true)"
@@ -124,14 +114,15 @@ if ! locale -a | grep -qx "$LOCALE"; then
   sed -i 's/^# *\(en_US.UTF-8 UTF-8\)/\1/' /etc/locale.gen
   locale-gen "$LOCALE"
 fi
+
 update-locale LANG="$LOCALE" LC_ALL="$LOCALE"
 export LANG="$LOCALE" LC_ALL="$LOCALE"
 STATUS_LOCALE=true
 
 # ==============================================================================
-# Base system update
+# System Update
 # ==============================================================================
-echo "[*] Updating system..."
+info "Updating system..."
 apt update -y
 apt upgrade -y
 apt autoremove -y
@@ -139,23 +130,25 @@ apt autoclean -y
 STATUS_UPDATE=true
 
 # ==============================================================================
-# Essential packages + unattended-upgrades
+# Essential Packages
 # ==============================================================================
-echo "[*] Installing essential packages..."
+info "Installing essential packages..."
 apt install -y \
   sudo curl wget git dialog ca-certificates gnupg lsb-release \
   htop zip unzip net-tools openssl build-essential \
-  bash-completion unattended-upgrades 
+  bash-completion unattended-upgrades
+
 STATUS_PACKAGES=true
 
-echo "[*] Enabling automatic security updates..."
+info "Enabling automatic security updates..."
 dpkg-reconfigure -f noninteractive unattended-upgrades
 STATUS_AUTOUPDATE=true
 
 # ==============================================================================
-# Swap (adaptive)
+# Swap
 # ==============================================================================
-echo "[*] Checking swap..."
+info "Checking swap..."
+
 if ! swapon --show | grep -q swap; then
   RAM_MB="$(free -m | awk '/Mem:/ {print $2}')"
   [[ "$RAM_MB" -lt 2048 ]] && SWAP_SIZE="2G" || SWAP_SIZE="1G"
@@ -166,11 +159,14 @@ if ! swapon --show | grep -q swap; then
   swapon /swapfile
   grep -q "/swapfile" /etc/fstab || echo "/swapfile none swap sw 0 0" >> /etc/fstab
 fi
+
 STATUS_SWAP=true
 
 # ==============================================================================
-# Sysctl baseline
+# Sysctl Baseline
 # ==============================================================================
+info "Applying sysctl baseline..."
+
 cat <<EOF >/etc/sysctl.d/99-bootstrap.conf
 vm.swappiness=10
 fs.file-max=100000
@@ -185,8 +181,10 @@ STATUS_SYSCTL=true
 # ==============================================================================
 # TCP BBR
 # ==============================================================================
-echo "[*] Configuring TCP BBR..."
-modprobe tcp_bbr
+info "Configuring TCP BBR..."
+
+modprobe tcp_bbr || true
+
 if sysctl net.ipv4.tcp_available_congestion_control 2>/dev/null | grep -qw bbr; then
   cat <<EOF >/etc/sysctl.d/99-bbr.conf
 net.core.default_qdisc=fq
@@ -194,12 +192,17 @@ net.ipv4.tcp_congestion_control=bbr
 EOF
   sysctl --system >/dev/null
   STATUS_BBR=true
+else
+  warn "BBR not supported on this kernel"
 fi
 
 # ==============================================================================
-# Journald limits
+# Journald Limits
 # ==============================================================================
+info "Configuring journald limits..."
+
 mkdir -p /etc/systemd/journald.conf.d
+
 cat <<EOF >/etc/systemd/journald.conf.d/limit.conf
 [Journal]
 SystemMaxUse=200M
@@ -215,16 +218,16 @@ STATUS_JOURNALD=true
 report() {
   local label="$1" status="$2"
   if [[ "$status" == true ]]; then
-    printf "  %-34s \e[32m[ OK ]\e[0m\n" "$label"
+    rept "$label"
   else
-    printf "  %-34s \e[33m[ SKIPPED ]\e[0m\n" "$label"
+    warn "$label (skipped)"
   fi
 }
 
-echo
-echo -e "\e[36m==================================================\e[0m"
-echo -e "\e[1m               BOOTSTRAP EXECUTION REPORT\e[0m"
-echo -e "\e[36m==================================================\e[0m"
+info "=================================================="
+info "BOOTSTRAP EXECUTION REPORT"
+info "=================================================="
+
 report "Timezone configuration"        "$STATUS_TIMEZONE"
 report "Locale configuration"          "$STATUS_LOCALE"
 report "System update & upgrade"       "$STATUS_UPDATE"
@@ -235,21 +238,14 @@ report "Journald limits"               "$STATUS_JOURNALD"
 report "Automatic security updates"    "$STATUS_AUTOUPDATE"
 report "TCP BBR congestion control"    "$STATUS_BBR"
 
-echo
-echo -e "\e[1;36m══════════════════════════════════════════════════\e[0m"
-echo -e " \e[1;32m✔ Bootstrap completed successfully\e[0m"
-echo -e " \e[1;32m✔ System is clean, updated & production-ready\e[0m"
-echo -e "\e[1;36m══════════════════════════════════════════════════\e[0m"
-echo
+info "══════════════════════════════════════════════════"
+rept "Bootstrap completed successfully"
+rept "System is clean, updated & production-ready"
+info "══════════════════════════════════════════════════"
 
 # ==============================================================================
-# Cleanup (safe mode)
+# Cleanup
 # ==============================================================================
-unset LOG
-unset CURRENT_TZ
-unset LOCALE
-unset RAM_MB
-unset SWAP_SIZE
 unset LOG CURRENT_TZ LOCALE RAM_MB SWAP_SIZE
 unset STATUS_TIMEZONE STATUS_LOCALE STATUS_UPDATE STATUS_PACKAGES
 unset STATUS_SWAP STATUS_SYSCTL STATUS_JOURNALD STATUS_AUTOUPDATE STATUS_BBR
