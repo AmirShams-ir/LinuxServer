@@ -1,99 +1,104 @@
 #!/usr/bin/env bash
 # -----------------------------------------------------------------------------
-# Description: This script performs mandatory base hosting setup on a fresh
-#              Linux VPS.
-#
+# Description: Security hardening (UFW + Fail2Ban + Kernel tuning)
 # Author: Amir Shams
 # GitHub: https://github.com/AmirShams-ir/LinuxServer
-#
-# Disclaimer: This script is provided for educational and informational
-#             purposes only. Use it responsibly and in compliance with all
-#             applicable laws and regulations.
-#
-# Note: This script is designed to be SAFE, IDEMPOTENT, and NON-DESTRUCTIVE.
-#       Review before use. No application-level services are installed here.
+# License: See GitHub repository for license details.
 # -----------------------------------------------------------------------------
 
-set -euo pipefail
+set -Eeuo pipefail
+IFS=$'\n\t'
 
-# --------------------------------------------------
-# Logging
-# --------------------------------------------------
-LOG="/var/log/server-security.log"
-if touch "$LOG" &>/dev/null; then
-  exec > >(tee -a "$LOG") 2>&1
-  echo "[*] Logging enabled: $LOG"
-fi
-
-echo -e "\e[1;33m══════════════════════════════════════════════════\e[0m"
-echo -e " \e[1;33m✔ Security Setup Script Started\e[0m"
-echo -e "\e[1;33m══════════════════════════════════════════════════\e[0m"
-
-# --------------------------------------------------
-# Root / sudo handling
-# --------------------------------------------------
-if [[ "$EUID" -ne 0 ]]; then
+# ==============================================================================
+# Root Handling
+# ==============================================================================
+if [[ "${EUID}" -ne 0 ]]; then
   if command -v sudo >/dev/null 2>&1; then
-    exec sudo bash "$0" "$@"
+    exec sudo --preserve-env=PATH bash "$0" "$@"
   else
-    echo "ERROR: Root privileges required."
+    printf "Root privileges required.\n"
     exit 1
   fi
 fi
 
-# --------------------------------------------------
-# OS validation
-# --------------------------------------------------
-if ! grep -Eqi '^(ID=(ubuntu|debian)|ID_LIKE=.*(debian|ubuntu))' /etc/os-release; then
-  echo "ERROR: Debian/Ubuntu only."
+# ==============================================================================
+# OS Validation
+# ==============================================================================
+if [[ -f /etc/os-release ]]; then
+  source /etc/os-release
+else
+  printf "Cannot detect OS.\n"
   exit 1
 fi
 
-export DEBIAN_FRONTEND=noninteractive
+[[ "${ID}" == "debian" || "${ID}" == "ubuntu" || "${ID_LIKE:-}" == *"debian"* ]] \
+  || { printf "Debian/Ubuntu only.\n"; exit 1; }
 
-# ==================================================
-# HELPERS
-# ==================================================
-log()  { echo -e "\e[32m[✔] $1\e[0m"; }
-warn() { echo -e "\e[33m[!] $1\e[0m"; }
-die()  { echo -e "\e[31m[✖] $1\e[0m"; exit 1; }
+# ==============================================================================
+# Logging
+# ==============================================================================
+LOG="/var/log/server-$(basename "$0" .sh).log"
+mkdir -p "$(dirname "$LOG")"
+: > "$LOG"
 
-# ==================================================
-# CONFIG
-# ==================================================
+{
+  printf "============================================================\n"
+  printf " Script: %s\n" "$(basename "$0")"
+  printf " Started at: %s\n" "$(date '+%Y-%m-%d %H:%M:%S')"
+  printf " Hostname: %s\n" "$(hostname)"
+  printf "============================================================\n"
+} >> "$LOG"
+
+exec > >(tee -a "$LOG") 2> >(tee -a "$LOG" >&2)
+
+# ==============================================================================
+# Helpers
+# ==============================================================================
+info() { printf "\e[34m%s\e[0m\n" "$*"; }
+rept() { printf "\e[32m[✔] %s\e[0m\n" "$*"; }
+warn() { printf "\e[33m[!] %s\e[0m\n" "$*"; }
+die()  { printf "\e[31m[✖] %s\e[0m\n" "$*"; exit 1; }
+
 SSH_PORT=22
 
-# ==================================================
-# FIREWALL (UFW)
-# ==================================================
-log "Installing & configuring UFW"
+# ==============================================================================
+# Banner
+# ==============================================================================
+info "═══════════════════════════════════════════"
+info "✔ Security Setup Script Started"
+info "═══════════════════════════════════════════"
 
-apt-get update
-apt-get install -y ufw
+# ==============================================================================
+# Firewall (UFW)
+# ==============================================================================
+info "Installing and configuring UFW..."
+
+apt-get update || die "APT update failed"
+apt-get install -y ufw || die "UFW installation failed"
 
 ufw --force reset
 ufw default deny incoming
 ufw default allow outgoing
 
-# --- Essential ---
-ufw allow ${SSH_PORT}/tcp    comment 'SSH'
-ufw allow 80/tcp             comment 'HTTP'
-ufw allow 443/tcp            comment 'HTTPS'
-
-# --- Panels / Admin (intentional) ---
-ufw allow 8080/tcp           comment 'Web Admin'
-ufw allow 8888/tcp           comment 'Nginx/OLS Admin'
-ufw allow 2222/tcp           comment 'Control Panel'
+ufw allow ${SSH_PORT}/tcp comment 'SSH'
+ufw allow 80/tcp comment 'HTTP'
+ufw allow 443/tcp comment 'HTTPS'
+ufw allow 8080/tcp comment 'Web Admin'
+ufw allow 8888/tcp comment 'Nginx/OLS Admin'
+ufw allow 2222/tcp comment 'Control Panel'
 
 ufw --force enable
-log "UFW enabled"
 
-# ==================================================
-# FAIL2BAN
-# ==================================================
-log "Installing & configuring Fail2Ban"
+rept "Firewall configured and enabled"
 
-apt-get install -y fail2ban
+# ==============================================================================
+# Fail2Ban
+# ==============================================================================
+info "Installing and configuring Fail2Ban..."
+
+apt-get install -y fail2ban || die "Fail2Ban installation failed"
+
+mkdir -p /etc/fail2ban
 
 cat > /etc/fail2ban/jail.local <<EOF
 [DEFAULT]
@@ -112,60 +117,51 @@ port = ${SSH_PORT}
 EOF
 
 systemctl enable --now fail2ban
-log "Fail2Ban active"
 
-# ==================================================
-# KERNEL HARDENING (sysctl)
-# ==================================================
-log "Applying kernel hardening"
+rept "Fail2Ban active"
+
+# ==============================================================================
+# Kernel Hardening
+# ==============================================================================
+info "Applying kernel hardening..."
 
 cat > /etc/sysctl.d/99-hardening.conf <<EOF
-# IP spoofing protection
 net.ipv4.conf.all.rp_filter = 1
 net.ipv4.conf.default.rp_filter = 1
-
-# Disable ICMP redirects
 net.ipv4.conf.all.accept_redirects = 0
 net.ipv4.conf.default.accept_redirects = 0
 net.ipv4.conf.all.send_redirects = 0
-
-# SYN flood protection
 net.ipv4.tcp_syncookies = 1
 net.ipv4.tcp_max_syn_backlog = 4096
 net.core.somaxconn = 4096
-
-# Ignore broadcast pings
 net.ipv4.icmp_echo_ignore_broadcasts = 1
-
-# Log martian packets
 net.ipv4.conf.all.log_martians = 1
-
-# Source routing
 net.ipv4.conf.all.accept_source_route = 0
 net.ipv4.conf.default.accept_source_route = 0
-
-# TCP tuning
 net.ipv4.tcp_fin_timeout = 15
 EOF
 
-sysctl --system
-log "Kernel hardening applied"
+sysctl --system >/dev/null || die "Sysctl reload failed"
 
-# ==================================================
-# CLEANUP
-# ==================================================
-log "Cleaning system"
+rept "Kernel hardening applied"
+
+# ==============================================================================
+# Cleanup
+# ==============================================================================
+info "Performing cleanup..."
+
 apt-get autoremove -y
 apt-get autoclean -y
-unset SSH_PORT DEBIAN_FRONTEND
 
-# ==================================================
-# FINAL REPORT
-# ==================================================
-echo
-echo -e "\e[1;36m══════════════════════════════════════════════\e[0m"
-echo -e "\e[1;32m ✔ Firewall : UFW enabled\e[0m"
-echo -e "\e[1;32m ✔ Protection : Fail2Ban active\e[0m"
-echo -e "\e[1;32m ✔ Kernel : Hardened\e[0m"
-echo -e "\e[1;36m══════════════════════════════════════════════\e[0m"
-echo
+unset SSH_PORT
+
+rept "Cleanup completed"
+
+# ==============================================================================
+# Final Summary
+# ==============================================================================
+info "══════════════════════════════════════════════"
+rept "Firewall  : UFW enabled"
+rept "Protection: Fail2Ban active"
+rept "Kernel    : Hardened"
+info "══════════════════════════════════════════════"
