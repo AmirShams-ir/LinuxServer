@@ -162,3 +162,5 @@ else
   cat /etc/resolv.conf
 fi
 log "══════════════════════════════════════════════"
+log "a"
+die "b"
