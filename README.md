@@ -1,20 +1,69 @@
-<h1>Server-Setup</h1>
-</br>
-Atomatic Fresh Server Setup Script Installation steps on Debian/Ubuntu VPS.
-Connect to your vps through ssh and copy and run the following command in the terminal.
+<div align="center">
 
-<b>Server Preparation</b>
+# 🚀 LinuxServer – Automated VPS Hosting Setup
 
-<code>apt update -y && apt upgrade -y && apt autoremove -y && apt autoclean -y && reboot</code>
+![Debian](https://img.shields.io/badge/Debian-12|13-red?logo=debian)
+![Ubuntu](https://img.shields.io/badge/Ubuntu-22.04|24.04-orange?logo=ubuntu)
+![License](https://img.shields.io/badge/License-MIT-blue)
+![Maintained](https://img.shields.io/badge/Maintained-Yes-success)
 
-<h2>After Rebooting Server</h2>
+> ⚡ Automatic Fresh Server Setup & Hosting Bootstrap Script  
+> Optimized for **Debian & Ubuntu VPS**
 
-<code>apt install -y sudo curl wget</code>
+</div>
 
-<h2>Host Server Scripts Installation Commands</h2>
+---
 
-For manual installation, copy and run the following command in the terminal.
+## ✨ About This Project
+
+**LinuxServer** is a professional automated setup toolkit for fresh VPS installations.
+
+It prepares your server for production hosting by configuring:
+
+- 🔐 Security hardening
+- 🌐 DNS configuration
+- 📦 Repository tuning
+- 💽 Disk optimization
+- 🔒 SSL configuration
+- ⚙️ Network optimization
+- 🏗 Hosting bootstrap environment
+
+Built for clean, stable and production-ready deployments.
+
+---
+
+# 🖥 Supported Operating Systems
+
+- ✅ Debian 12
+- ✅ Debian 13
+- ✅ Ubuntu 22.04 LTS
+- ✅ Ubuntu 24.04 LTS
+
+---
+
+# ⚙️ Step 1 — Initial Server Preparation
+
+Connect to your VPS via SSH and run:
+
+```bash
+apt update -y && apt upgrade -y && apt autoremove -y && apt autoclean -y && reboot
 ```
+
+---
+
+# 🔧 Step 2 — Install Required Tools (After Reboot)
+
+```bash
+apt install -y sudo curl wget
+```
+
+---
+
+# 🚀 Step 3 — Install Hosting Scripts
+
+You can install scripts manually one by one:
+
+```bash
 bash -c "$(curl -Lfo- https://raw.githubusercontent.com/AmirShams-ir/LinuxServer/refs/heads/main/dns.sh)"
 bash -c "$(curl -Lfo- https://raw.githubusercontent.com/AmirShams-ir/LinuxServer/refs/heads/main/repository.sh)"
 bash -c "$(curl -Lfo- https://raw.githubusercontent.com/AmirShams-ir/LinuxServer/refs/heads/main/disktweak.sh)"
@@ -25,8 +74,51 @@ bash -c "$(curl -Lfo- https://raw.githubusercontent.com/AmirShams-ir/LinuxServer
 bash -c "$(curl -Lfo- https://raw.githubusercontent.com/AmirShams-ir/LinuxServer/refs/heads/main/host.sh)"
 ```
 
-You can donate to me through Plisio
+---
 
-<a href="https://plisio.net/donate/f_9qcQRU" target="_blank"><img src="https://plisio.net/img/donate/donate_light_icons_color.png" alt="Donate Crypto on Plisio" width="240" height="80" /></a>
+# 🧠 Script Overview
 
-<b> Made with ❤️ 4U </b>
+| Script | Description |
+|--------|-------------|
+| `dns.sh` | DNS resolver & performance tuning |
+| `repository.sh` | Official repo configuration & cleanup |
+| `disktweak.sh` | Disk & filesystem optimization |
+| `security.sh` | SSH hardening, firewall & protection |
+| `ssl.sh` | SSL & certificate automation |
+| `bootstrap.sh` | Base server environment setup |
+| `netstrap.sh` | Advanced network optimization |
+| `host.sh` | Hosting environment automation |
+
+---
+
+# 🔐 Why Use LinuxServer?
+
+- 🧼 Clean & structured setup  
+- 🛡 Secure-by-default configuration  
+- ⚡ Performance optimized  
+- 📦 Official repositories only  
+- 🧩 Modular architecture  
+- 🧑‍💻 Easy to maintain  
+
+---
+
+# 💰 Support the Project
+
+If this project helps you, you can support development via crypto donation:
+
+<div align="center">
+<a href="https://plisio.net/donate/f_9qcQRU" target="_blank">
+<img src="https://plisio.net/img/donate/donate_light_icons_color.png" width="240" />
+</a>
+</div>
+
+---
+
+<div align="center">
+
+## ❤️ Made with Love by Amir
+
+Production-grade VPS setup toolkit  
+Built for stability. Designed for performance.
+
+</div>
