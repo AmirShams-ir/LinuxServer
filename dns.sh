@@ -1,58 +1,63 @@
 #!/usr/bin/env bash
 # -----------------------------------------------------------------------------
-# Description: This script performs mandatory base hosting setup on a fresh
-#              Linux VPS.
-#
+# Description: Smart DNS auto-selection based on latency (Debian/Ubuntu).
 # Author: Amir Shams
 # GitHub: https://github.com/AmirShams-ir/LinuxServer
-#
-# Disclaimer: This script is provided for educational and informational
-#             purposes only. Use it responsibly and in compliance with all
-#             applicable laws and regulations.
-#
-# Note: This script is designed to be SAFE, IDEMPOTENT, and NON-DESTRUCTIVE.
-#       Review before use. No application-level services are installed here.
+# License: See GitHub repository for license details.
 # -----------------------------------------------------------------------------
 
 set -Eeuo pipefail
+IFS=$'\n\t'
 
 # ==============================================================================
-# Root / sudo handling
+# Root Handling
 # ==============================================================================
 if [[ "${EUID}" -ne 0 ]]; then
-  command -v sudo >/dev/null 2>&1 || exit 1
-  exec sudo -E bash "$0" "$@"
+  if command -v sudo >/dev/null 2>&1; then
+    exec sudo --preserve-env=PATH bash "$0" "$@"
+  else
+    printf "Root privileges required.\n"
+    exit 1
+  fi
 fi
 
 # ==============================================================================
-# OS detection
+# OS Validation
 # ==============================================================================
-source /etc/os-release
+if [[ -f /etc/os-release ]]; then
+  source /etc/os-release
+else
+  printf "Cannot detect OS.\n"
+  exit 1
+fi
 
-IS_UBUNTU=false
-IS_DEBIAN=false
-
-case "$ID" in
-  ubuntu) IS_UBUNTU=true ;;
-  debian) IS_DEBIAN=true ;;
-esac
-
-$IS_UBUNTU || $IS_DEBIAN ||  echo "❌ ERROR: Unsupported OS. Debian/Ubuntu only." exit 1
+[[ "${ID}" == "debian" || "${ID}" == "ubuntu" || "${ID_LIKE:-}" == *"debian"* ]] \
+  || { printf "Debian/Ubuntu only.\n"; exit 1; }
 
 # ==============================================================================
 # Logging
 # ==============================================================================
-LOG="/var/log/server-dns.log"
+LOG="/var/log/server-$(basename "$0" .sh).log"
 mkdir -p "$(dirname "$LOG")"
-exec > >(tee -a "$LOG") 2>&1
+: > "$LOG"
+
+{
+  printf "============================================================\n"
+  printf " Script: %s\n" "$(basename "$0")"
+  printf " Started at: %s\n" "$(date '+%Y-%m-%d %H:%M:%S')"
+  printf " Hostname: %s\n" "$(hostname)"
+  printf "============================================================\n"
+} >> "$LOG"
+
+exec > >(tee -a "$LOG") 2> >(tee -a "$LOG" >&2)
 
 # ==============================================================================
-# Hellper
+# Helpers
 # ==============================================================================
-info() { echo -e "\e[34m $1\e[0m"; }
-rept() { echo -e "\e[32m[✔] $1\e[0m"; }
-warn() { echo -e "\e[33m[!] $1\e[0m"; }
-dies() { echo -e "\e[31m[✖] $1\e[0m"; }
+info() { printf "\e[34m%s\e[0m\n" "$*"; }
+rept() { printf "\e[32m[✔] %s\e[0m\n" "$*"; }
+warn() { printf "\e[33m[!] %s\e[0m\n" "$*"; }
+die()  { printf "\e[31m[✖] %s\e[0m\n" "$*"; exit 1; }
 
 # ==============================================================================
 # Banner
@@ -62,18 +67,14 @@ info "✔ Smart DNS Server Script Started"
 info "═══════════════════════════════════════════"
 
 # ==============================================================================
-# DNS CONFIG
+# DNS Configuration
 # ==============================================================================
-INTL_DNS=(
-  1.1.1.1 1.0.0.1 9.9.9.9 149.112.112.112 8.8.8.8 4.2.2.4
-)
+info "Preparing DNS server lists..."
 
-IR_DNS=(
-  185.51.200.2 178.22.122.100 78.157.42.100 78.157.42.101
-  185.55.225.24 185.55.225.25 185.55.225.26 181.41.194.177 181.41.194.186
-  94.103.125.157 94.103.125.158 209.244.0.3 209.244.0.4 5.200.200.200
-  217.218.127.127 217.218.155.155 87.107.110.109 87.107.110.110
-)
+INTL_DNS=(1.1.1.1 1.0.0.1 9.9.9.9 149.112.112.112 8.8.8.8 4.2.2.4)
+IR_DNS=(185.51.200.2 178.22.122.100 78.157.42.100 78.157.42.101
+        185.55.225.24 185.55.225.25 185.55.225.26
+        94.103.125.157 94.103.125.158 217.218.127.127)
 
 PING_TIMEOUT=1
 
@@ -82,44 +83,59 @@ measure_latency() {
     | awk -F'/' 'END {print $5}' || true
 }
 
+rept "DNS server lists prepared"
+
+# ==============================================================================
+# Latency Testing
+# ==============================================================================
+info "Measuring DNS latency..."
+
 INTL_SORTED=()
 IR_SORTED=()
 
-rept "Testing latency for international DNS servers..."
 for d in "${INTL_DNS[@]}"; do
-  l=$(measure_latency "$d")
-  [[ -n "$l" ]] && INTL_SORTED+=("$l:$d") && echo "  ✔ $d → ${l} ms"
+  l="$(measure_latency "$d")"
+  [[ -n "$l" ]] && INTL_SORTED+=("$l:$d")
 done
 
-rept "Testing latency for Iranian DNS servers..."
 for d in "${IR_DNS[@]}"; do
-  l=$(measure_latency "$d")
-  [[ -n "$l" ]] && IR_SORTED+=("$l:$d") && echo "  ✔ $d → ${l} ms"
+  l="$(measure_latency "$d")"
+  [[ -n "$l" ]] && IR_SORTED+=("$l:$d")
 done
 
-if [[ "${#INTL_SORTED[@]}" -gt 0 ]]; then
-  DNS_PRIMARY=$(printf "%s\n" "${INTL_SORTED[@]}" | sort -n | cut -d: -f2)
-  DNS_FALLBACK=$(printf "%s\n" "${IR_SORTED[@]}" | sort -n | cut -d: -f2)
+rept "Latency measurement completed"
+
+# ==============================================================================
+# DNS Selection Logic
+# ==============================================================================
+info "Selecting optimal DNS servers..."
+
+if [[ ${#INTL_SORTED[@]} -gt 0 ]]; then
+  DNS_PRIMARY="$(printf "%s\n" "${INTL_SORTED[@]}" | sort -n | head -n1 | cut -d: -f2)"
+  DNS_FALLBACK="$(printf "%s\n" "${IR_SORTED[@]}" | sort -n | head -n1 | cut -d: -f2 || true)"
 else
-  warn "National internet mode detected"
-  DNS_PRIMARY=$(printf "%s\n" "${IR_SORTED[@]}" | sort -n | cut -d: -f2)
-  DNS_FALLBACK=("${INTL_DNS[@]}")
+  warn "International DNS unreachable. Using national mode."
+  DNS_PRIMARY="$(printf "%s\n" "${IR_SORTED[@]}" | sort -n | head -n1 | cut -d: -f2 || true)"
+  DNS_FALLBACK=""
 fi
 
-[[ -z "$DNS_PRIMARY" ]] && exit 1
+[[ -n "$DNS_PRIMARY" ]] || die "No reachable DNS servers found"
+
+rept "Primary DNS selected: $DNS_PRIMARY"
 
 # ==============================================================================
-# APPLY DNS
+# Apply DNS Configuration
 # ==============================================================================
-rept "Applying DNS configuration"
+info "Applying DNS configuration..."
 
-if $IS_UBUNTU && command -v resolvectl >/dev/null 2>&1; then
+if command -v resolvectl >/dev/null 2>&1; then
+
   mkdir -p /etc/systemd/resolved.conf.d
 
   cat > /etc/systemd/resolved.conf.d/10-smart-dns.conf <<EOF
 [Resolve]
-DNS=$(echo "$DNS_PRIMARY")
-FallbackDNS=$(echo "$DNS_FALLBACK")
+DNS=$DNS_PRIMARY
+FallbackDNS=$DNS_FALLBACK
 DNSOverTLS=opportunistic
 DNSSEC=no
 EOF
@@ -128,39 +144,41 @@ EOF
   systemctl restart systemd-resolved
   resolvectl flush-caches
 
-  IFACE=$(ip route | awk '/default/ {print $5; exit}')
-  resolvectl revert "$IFACE" || true
-  resolvectl dns "$IFACE" $DNS_PRIMARY
-  resolvectl domain "$IFACE" ~.
-
   ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
 
 else
-  cat > /etc/resolv.conf <<EOF
-$(for d in $DNS_PRIMARY $DNS_FALLBACK; do echo "nameserver $d"; done)
-options edns0
-EOF
+
+  {
+    echo "nameserver $DNS_PRIMARY"
+    [[ -n "$DNS_FALLBACK" ]] && echo "nameserver $DNS_FALLBACK"
+    echo "options edns0"
+  } > /etc/resolv.conf
+
 fi
 
 rept "DNS configured successfully"
 
 # ==============================================================================
-# CLEANUP
+# Cleanup
 # ==============================================================================
-apt-get autoremove -y
-apt-get autoclean -y
-unset INTL_DNS IR_DNS INTL_SORTED IR_SORTED DNS_PRIMARY DNS_FALLBACK IS_UBUNTU IS_DEBIAN
-rept "Cleanup successfully"
+info "Performing cleanup..."
+
+apt-get autoremove -y >/dev/null
+apt-get autoclean -y >/dev/null
+
+unset INTL_DNS IR_DNS INTL_SORTED IR_SORTED DNS_PRIMARY DNS_FALLBACK
+
+rept "Cleanup completed"
 
 # ==============================================================================
-# REPORT
+# Final Summary
 # ==============================================================================
 info "═══════════════════════════════════════════"
-info "✔ Smart DNS Resolver : ACTIVATED"
+rept "Smart DNS Resolver Activated"
 info "═══════════════════════════════════════════"
 
 if command -v resolvectl >/dev/null 2>&1; then
-  resolvectl status
+  resolvectl status | sed -n '1,20p'
 else
   cat /etc/resolv.conf
 fi
