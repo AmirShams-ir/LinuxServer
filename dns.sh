@@ -47,7 +47,7 @@ mkdir -p "$(dirname "$LOG")"
 exec > >(tee -a "$LOG") 2>&1
 
 log() { echo -e "\e[32m[✔] $1\e[0m"; }
-die() { echo -e "\e[31m[✖] $1\e[0m"; exit 1; }
+die() { echo -e "\e[31m[✖] $1\e[0m"; }
 
 # ==============================================================================
 # Banner
@@ -80,13 +80,13 @@ measure_latency() {
 INTL_SORTED=()
 IR_SORTED=()
 
-log "[✔] Testing latency for international DNS servers..."
+log "Testing latency for international DNS servers..."
 for d in "${INTL_DNS[@]}"; do
   l=$(measure_latency "$d")
   [[ -n "$l" ]] && INTL_SORTED+=("$l:$d") && echo "  ✔ $d → ${l} ms"
 done
 
-log "[✔] Testing latency for Iranian DNS servers..."
+log "Testing latency for Iranian DNS servers..."
 for d in "${IR_DNS[@]}"; do
   l=$(measure_latency "$d")
   [[ -n "$l" ]] && IR_SORTED+=("$l:$d") && echo "  ✔ $d → ${l} ms"
@@ -96,7 +96,7 @@ if [[ "${#INTL_SORTED[@]}" -gt 0 ]]; then
   DNS_PRIMARY=$(printf "%s\n" "${INTL_SORTED[@]}" | sort -n | cut -d: -f2)
   DNS_FALLBACK=$(printf "%s\n" "${IR_SORTED[@]}" | sort -n | cut -d: -f2)
 else
-  echo "[!] National internet mode detected"
+  die "[!] National internet mode detected"
   DNS_PRIMARY=$(printf "%s\n" "${IR_SORTED[@]}" | sort -n | cut -d: -f2)
   DNS_FALLBACK=("${INTL_DNS[@]}")
 fi
@@ -106,7 +106,7 @@ fi
 # ==============================================================================
 # APPLY DNS
 # ==============================================================================
-log "[✔] Applying DNS configuration"
+log "Applying DNS configuration"
 
 if $IS_UBUNTU && command -v resolvectl >/dev/null 2>&1; then
   mkdir -p /etc/systemd/resolved.conf.d
@@ -161,3 +161,4 @@ if command -v resolvectl >/dev/null 2>&1; then
 else
   cat /etc/resolv.conf
 fi
+log "══════════════════════════════════════════════"
