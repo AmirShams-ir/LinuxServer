@@ -79,7 +79,7 @@ if has_systemd; then
   CURRENT_TZ="$(timedatectl show -p Timezone --value 2>/dev/null || true)"
   [[ "$CURRENT_TZ" != "UTC" ]] && timedatectl set-timezone UTC
 else
-  warn "Systemd not detected, skipping timezone enforcement"
+  warn "Systemd not detected, timezone enforcement skipped"
 fi
 
 LOCALE="en_US.UTF-8"
@@ -191,4 +191,21 @@ if has_systemd; then
 SystemMaxUse=200M
 RuntimeMaxUse=100M
 EOF
-  systemctl restar
+  systemctl restart systemd-journald
+  rept "Journald limits applied"
+else
+  warn "Systemd not detected, journald skipped"
+fi
+
+# ==============================================================================
+# Final Summary
+# ==============================================================================
+info "══════════════════════════════════════════════════"
+rept "Bootstrap completed successfully"
+rept "System is clean, updated and production-ready"
+info "══════════════════════════════════════════════════"
+
+# ==============================================================================
+# Cleanup
+# ==============================================================================
+unset LOG CURRENT_TZ LOCALE RAM_MB SWAP_SIZE
