@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # -----------------------------------------------------------------------------
-# Description: This script performs mandatory base initialization on a fresh
-#              Linux VPS. It prepares the system with safe defaults, essential
-#              tools, and baseline optimizations before any role-specific
-#              configuration (hosting, security, WordPress, etc.).
+# Description: This script performs mandatory base hosting setup on a fresh
+#              Linux VPS.
 #
 # Author: Amir Shams
 # GitHub: https://github.com/AmirShams-ir/LinuxServer
+#
+# License: See GitHub repository for license details.
 #
 # Disclaimer: This script is provided for educational and informational
 #             purposes only. Use it responsibly and in compliance with all
@@ -16,52 +16,80 @@
 #       Review before use. No application-level services are installed here.
 # -----------------------------------------------------------------------------
 
-set -euo pipefail
+set -Eeuo pipefail
+IFS=$'\n\t'
 
-# --------------------------------------------------
-# Logging
-# --------------------------------------------------
-LOG="/var/log/server-bootstrap.log"
-if touch "$LOG" &>/dev/null; then
-  exec > >(tee -a "$LOG") 2>&1
-  echo "[*] Logging enabled: $LOG"
-fi
-
-echo -e "\e[1;33m═══════════════════════════════════════════\e[0m"
-echo -e " \e[1;33m✔ Bootstrap Script Started\e[0m"
-echo -e "\e[1;33m═══════════════════════════════════════════\e[0m"
-
-# --------------------------------------------------
+# ==============================================================================
 # Root / sudo handling
-# --------------------------------------------------
-if [[ "$EUID" -ne 0 ]]; then
+# ==============================================================================
+if [[ "${EUID}" -ne 0 ]]; then
   if command -v sudo >/dev/null 2>&1; then
-    echo "Re-running script with sudo..."
-    exec sudo bash "$0" "$@"
+    exec sudo --preserve-env=PATH bash "$0" "$@"
   else
-    echo "Error: Root privileges required."
+    printf "This script requires root privileges.\n"
     exit 1
   fi
 fi
 
-# --------------------------------------------------
+# ==============================================================================
 # OS validation
-# --------------------------------------------------
-if ! grep -Eqi '^(ID=(ubuntu|debian)|ID_LIKE=.*(debian|ubuntu))' /etc/os-release; then
-  echo "ERROR: Debian/Ubuntu only."
+# ==============================================================================
+if [[ -f /etc/os-release ]]; then
+  source /etc/os-release
+else
+  printf "ERROR: Cannot detect OS.\n"
   exit 1
 fi
 
-# --------------------------------------------------
+if [[ "${ID}" != "debian" && "${ID}" != "ubuntu" && "${ID_LIKE:-}" != *"debian"* ]]; then
+  printf "ERROR: Debian/Ubuntu only.\n"
+  exit 1
+fi
+
+# ==============================================================================
+# Logging
+# ==============================================================================
+LOG="/var/log/server-$(basename "$0" .sh).log"
+
+mkdir -p "$(dirname "$LOG")"
+
+: > "$LOG"
+
+{
+  printf "============================================================\n"
+  printf " Script: %s\n" "$(basename "$0")"
+  printf " Started at: %s\n" "$(date '+%Y-%m-%d %H:%M:%S')"
+  printf " Hostname: %s\n" "$(hostname)"
+  printf "============================================================\n"
+} >> "$LOG"
+
+exec > >(tee -a "$LOG") 2> >(tee -a "$LOG" >&2)
+
+# ==============================================================================
+# Helper Functions
+# ==============================================================================
+info() { printf "\e[34m%s\e[0m\n" "$*"; }
+rept() { printf "\e[32m[✔] %s\e[0m\n" "$*"; }
+warn() { printf "\e[33m[!] %s\e[0m\n" "$*"; }
+die()  { printf "\e[31m[✖] %s\e[0m\n" "$*"; exit 1; }
+
+# ==============================================================================
+# Banner
+# ==============================================================================
+info "═══════════════════════════════════════════"
+info "✔ Bootstrap Script Started"
+info "═══════════════════════════════════════════"
+
+# ==============================================================================
 # Helper: systemd detection
-# --------------------------------------------------
+# ==============================================================================
 has_systemd() {
   [[ -d /run/systemd/system ]] && command -v systemctl >/dev/null 2>&1
 }
 
-# --------------------------------------------------
+# ==============================================================================
 # Status flags (for final report)
-# --------------------------------------------------
+# ==============================================================================
 STATUS_TIMEZONE=false
 STATUS_LOCALE=false
 STATUS_UPDATE=false
@@ -72,17 +100,17 @@ STATUS_JOURNALD=false
 STATUS_AUTOUPDATE=false
 STATUS_BBR=false
 
-# --------------------------------------------------
+# ==============================================================================
 # OS validation
-# --------------------------------------------------
+# ==============================================================================
 if ! grep -Eqi '^(ID=(ubuntu|debian)|ID_LIKE=.*(debian|ubuntu))' /etc/os-release; then
   echo "ERROR: Debian/Ubuntu only."
   exit 1
 fi
 
-# --------------------------------------------------
+# ==============================================================================
 # Timezone & Locale (FORCED)
-# --------------------------------------------------
+# ==============================================================================
 echo "[*] Configuring timezone & locale..."
 
 if has_systemd; then
@@ -100,9 +128,9 @@ update-locale LANG="$LOCALE" LC_ALL="$LOCALE"
 export LANG="$LOCALE" LC_ALL="$LOCALE"
 STATUS_LOCALE=true
 
-# --------------------------------------------------
+# ==============================================================================
 # Base system update
-# --------------------------------------------------
+# ==============================================================================
 echo "[*] Updating system..."
 apt update -y
 apt upgrade -y
@@ -110,9 +138,9 @@ apt autoremove -y
 apt autoclean -y
 STATUS_UPDATE=true
 
-# --------------------------------------------------
+# ==============================================================================
 # Essential packages + unattended-upgrades
-# --------------------------------------------------
+# ==============================================================================
 echo "[*] Installing essential packages..."
 apt install -y \
   sudo curl wget git dialog ca-certificates gnupg lsb-release \
@@ -124,9 +152,9 @@ echo "[*] Enabling automatic security updates..."
 dpkg-reconfigure -f noninteractive unattended-upgrades
 STATUS_AUTOUPDATE=true
 
-# --------------------------------------------------
+# ==============================================================================
 # Swap (adaptive)
-# --------------------------------------------------
+# ==============================================================================
 echo "[*] Checking swap..."
 if ! swapon --show | grep -q swap; then
   RAM_MB="$(free -m | awk '/Mem:/ {print $2}')"
@@ -140,9 +168,9 @@ if ! swapon --show | grep -q swap; then
 fi
 STATUS_SWAP=true
 
-# --------------------------------------------------
+# ==============================================================================
 # Sysctl baseline
-# --------------------------------------------------
+# ==============================================================================
 cat <<EOF >/etc/sysctl.d/99-bootstrap.conf
 vm.swappiness=10
 fs.file-max=100000
@@ -154,9 +182,9 @@ EOF
 sysctl --system >/dev/null
 STATUS_SYSCTL=true
 
-# --------------------------------------------------
+# ==============================================================================
 # TCP BBR
-# --------------------------------------------------
+# ==============================================================================
 echo "[*] Configuring TCP BBR..."
 modprobe tcp_bbr
 if sysctl net.ipv4.tcp_available_congestion_control 2>/dev/null | grep -qw bbr; then
@@ -168,9 +196,9 @@ EOF
   STATUS_BBR=true
 fi
 
-# --------------------------------------------------
+# ==============================================================================
 # Journald limits
-# --------------------------------------------------
+# ==============================================================================
 mkdir -p /etc/systemd/journald.conf.d
 cat <<EOF >/etc/systemd/journald.conf.d/limit.conf
 [Journal]
@@ -181,9 +209,9 @@ EOF
 has_systemd && systemctl restart systemd-journald
 STATUS_JOURNALD=true
 
-# --------------------------------------------------
+# ==============================================================================
 # Final Report
-# --------------------------------------------------
+# ==============================================================================
 report() {
   local label="$1" status="$2"
   if [[ "$status" == true ]]; then
@@ -214,9 +242,9 @@ echo -e " \e[1;32m✔ System is clean, updated & production-ready\e[0m"
 echo -e "\e[1;36m══════════════════════════════════════════════════\e[0m"
 echo
 
-# --------------------------------------------------
+# ==============================================================================
 # Cleanup (safe mode)
-# --------------------------------------------------
+# ==============================================================================
 unset LOG
 unset CURRENT_TZ
 unset LOCALE
