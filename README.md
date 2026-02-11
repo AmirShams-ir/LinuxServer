@@ -34,10 +34,10 @@ Built for clean, stable and production-ready deployments.
 
 # 🖥 Supported Operating Systems
 
-- ✅ Debian 12
-- ✅ Debian 13
-- ✅ Ubuntu 22.04 LTS
-- ✅ Ubuntu 24.04 LTS
+- ✅ Debian 12  
+- ✅ Debian 13  
+- ✅ Ubuntu 22.04 LTS  
+- ✅ Ubuntu 24.04 LTS  
 
 ---
 
@@ -116,9 +116,10 @@ If this project helps you, you can support development via crypto donation:
 
 <div align="center">
 
-## ❤️ Made with Love by Amir
+## ❤️ Made with Love by Amir & ChatGPT
 
 Production-grade VPS setup toolkit  
 Built for stability. Designed for performance.
+Core Architecture & Automation Design by ChatGPT
 
 </div>
