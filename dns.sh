@@ -144,8 +144,8 @@ EOF
   systemctl enable systemd-resolved >/dev/null 2>&1 || true
   systemctl restart systemd-resolved
   resolvectl flush-caches
-
   rept "systemd-resolved updated"
+  resolvectl status
 
 else
 
@@ -160,12 +160,18 @@ else
   } > /etc/resolv.conf
 
   rept "/etc/resolv.conf updated"
+  cat /etc/resolv.conf
 fi
+
+# ==============================================================================
+# Cleanup
+# ==============================================================================
+unset DNS_PRIMARY DNS_FALLBACK
 
 # ==============================================================================
 # Final Summary
 # ==============================================================================
 info "═══════════════════════════════════════════"
-rept "Primary DNS   : ${DNS_PRIMARY[*]}"
-rept "Fallback DNS  : ${DNS_FALLBACK[*]}"
+rept "Primary DNS   : Set"
+rept "Fallback DNS  : Set"
 info "═══════════════════════════════════════════"
