@@ -73,29 +73,37 @@ info "════════════════════════�
 # ==============================================================================
 info "Collecting user input..."
 
-read -rp "Enter hostname (e.g. vps): " HOSTNAME
+read -rp "Enter hostname (e.g. vps): " HOST_SHORT
 read -rp "Enter domain name (e.g. example.com): " DOMAIN
 read -rp "Enter admin email (SSL alerts): " ADMIN_EMAIL
 
-[[ -n "$HOSTNAME" && -n "$DOMAIN" && -n "$ADMIN_EMAIL" ]] \
+[[ -n "$HOST_SHORT" && -n "$DOMAIN" && -n "$ADMIN_EMAIL" ]] \
   || die "Inputs cannot be empty"
 
 [[ "$DOMAIN" =~ \. ]] || die "Invalid domain format"
 [[ "$ADMIN_EMAIL" =~ @ ]] || die "Invalid email format"
 
-FQDN="${HOSTNAME}.${DOMAIN}"
+FQDN="${HOST_SHORT}.${DOMAIN}"
 
 rept "Input validated"
+
+# ==============================================================================
+# Install minimal DNS tools (if missing)
+# ==============================================================================
+if ! command -v dig >/dev/null 2>&1; then
+  apt-get update -y
+  apt-get install -y dnsutils
+fi
 
 # ==============================================================================
 # DNS A Record Validation
 # ==============================================================================
 info "Validating DNS A record..."
 
-SERVER_IP="$(curl -fsSL https://api.ipify.org || true)"
-DNS_IP="$(dig +short "$FQDN" A | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n1)"
+SERVER_IP=$(ip -4 route get 1.1.1.1 | awk '{print $7; exit}')
+DNS_IP=$(dig +short "$FQDN" A | head -n1 || true)
 
-[[ -n "$SERVER_IP" ]] || die "Cannot detect server public IP"
+[[ -n "$SERVER_IP" ]] || die "Cannot detect server IP"
 
 if [[ "$SERVER_IP" != "$DNS_IP" ]]; then
   warn "DNS A record mismatch detected"
@@ -107,88 +115,49 @@ fi
 rept "DNS A record verified"
 
 # ==============================================================================
-# Smart Basic System Preparation (Production Ready)
+# Smart Hostname Configuration
 # ==============================================================================
-info "Preparing base system (smart mode)..."
-
-# Detect Primary Public IPv4
-PUBLIC_IPV4=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}')
-
-if [[ -z "$PUBLIC_IPV4" ]] || [[ "$PUBLIC_IPV4" =~ ^10\. ]] || \
-   [[ "$PUBLIC_IPV4" =~ ^192\.168\. ]] || [[ "$PUBLIC_IPV4" =~ ^172\.(1[6-9]|2[0-9]|3[0-1])\. ]]; then
-    warn "Public IPv4 not detected or behind NAT. Using 127.0.1.1 fallback."
-    PUBLIC_IPV4="127.0.1.1"
-else
-    success "Detected Public IPv4: $PUBLIC_IPV4"
-fi
-
-# Detect IPv6 (if exists)
-PUBLIC_IPV6=$(ip -6 route get 2606:4700:4700::1111 2>/dev/null | awk '{print $7; exit}')
-
-if [[ -n "$PUBLIC_IPV6" ]]; then
-    success "Detected IPv6: $PUBLIC_IPV6"
-else
-    info "No IPv6 detected. Skipping IPv6 host entry."
-fi
+info "Configuring hostname..."
 
 CURRENT_HOSTNAME=$(hostnamectl --static)
 
 if [[ "$CURRENT_HOSTNAME" != "$FQDN" ]]; then
-    hostnamectl set-hostname "$FQDN"
-    success "Hostname updated to $FQDN"
+  hostnamectl set-hostname "$FQDN"
+  rept "Hostname updated to $FQDN"
 else
-    info "Hostname already set correctly."
+  info "Hostname already set correctly."
 fi
 
 cp /etc/hosts /etc/hosts.bak.$(date +%s)
-
-# Remove old entries for this hostname
 sed -i "/$FQDN/d" /etc/hosts
 
-# Ensure localhost entries exist
 grep -q "^127.0.0.1" /etc/hosts || echo "127.0.0.1 localhost" >> /etc/hosts
 grep -q "^::1" /etc/hosts || echo "::1 localhost ip6-localhost ip6-loopback" >> /etc/hosts
 
-# Add IPv4 entry
-echo "$PUBLIC_IPV4 $FQDN ${FQDN%%.*}" >> /etc/hosts
+echo "$SERVER_IP $FQDN ${FQDN%%.*}" >> /etc/hosts
 
-# Add IPv6 entry if available
-if [[ -n "$PUBLIC_IPV6" ]]; then
-    echo "$PUBLIC_IPV6 $FQDN ${FQDN%%.*}" >> /etc/hosts
-fi
-
-success "/etc/hosts updated safely."
-
-info "Final hostname: $(hostname)"
-info "Hostname -f: $(hostname -f)"
-info "IPv4: $PUBLIC_IPV4"
-[[ -n "$PUBLIC_IPV6" ]] && info "IPv6: $PUBLIC_IPV6"
-
-success "Base system preparation completed."
+rept "/etc/hosts updated"
 
 # ==============================================================================
-# Set Timezone
+# Timezone
 # ==============================================================================
-
 if timedatectl list-timezones | grep -q "^$TIMEZONE$"; then
-    timedatectl set-timezone "$TIMEZONE"
-    success "Timezone set to $TIMEZONE"
-else
-    warn "Timezone $TIMEZONE not valid. Skipping."
+  timedatectl set-timezone "$TIMEZONE"
+  rept "Timezone set to $TIMEZONE"
 fi
 
 # ==============================================================================
-# Basic System Installation
+# Base Packages
 # ==============================================================================
-info "Preparing basic installation..."
+info "Installing base packages..."
 
-apt-get update || die "APT update failed"
-apt-get upgrade -y || die "System upgrade failed"
+apt-get update -y
+apt-get upgrade -y
 
 apt-get install -y \
   curl wget git unzip \
   ca-certificates gnupg lsb-release \
-  dnsutils certbot vnstat
+  certbot vnstat
 
 rept "System prepared"
 
@@ -224,4 +193,4 @@ rept "SSL/TLS  : Active"
 rept "Monitor  : vnStat enabled"
 info "══════════════════════════════════════════════"
 
-unset HOSTNAME DOMAIN FQDN ADMIN_EMAIL SERVER_IP DNS_IP TIMEZONE
+unset HOST_SHORT DOMAIN FQDN ADMIN_EMAIL SERVER_IP DNS_IP TIMEZONE
