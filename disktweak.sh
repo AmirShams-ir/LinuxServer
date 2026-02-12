@@ -188,7 +188,4 @@ rept "Disk tweak completed successfully"
 rept "Disk expanded and quota ready"
 info "══════════════════════════════════════════════════"
 
-# ==============================================================================
-# Cleanup
-# ==============================================================================
 unset LOG ROOT_SRC FS_TYPE PV_DEV DISK_DEV PART_NUM
