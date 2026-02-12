@@ -59,8 +59,6 @@ rept() { printf "\e[32m[✔] %s\e[0m\n" "$*"; }
 warn() { printf "\e[33m[!] %s\e[0m\n" "$*"; }
 die()  { printf "\e[31m[✖] %s\e[0m\n" "$*"; exit 1; }
 
-SSH_PORT=22
-
 # ==============================================================================
 # Banner
 # ==============================================================================
@@ -71,7 +69,7 @@ info "════════════════════════�
 # ==============================================================================
 # Firewall (UFW)
 # ==============================================================================
-info "Installing and configuring UFW..."
+info "Installing UFW..."
 
 apt-get update || die "APT update failed"
 apt-get install -y ufw || die "UFW installation failed"
@@ -80,12 +78,22 @@ ufw --force reset
 ufw default deny incoming
 ufw default allow outgoing
 
-ufw allow ${SSH_PORT}/tcp comment 'SSH'
+rept "Firewall installed"
+
+# ==============================================================================
+# Firewall Config
+# ==============================================================================
+info "Configuring UFW..."
+
+ufw allow 22/tcp comment 'SSH'
 ufw allow 80/tcp comment 'HTTP'
 ufw allow 443/tcp comment 'HTTPS'
+ufw allow 8443/tcp comment 'HTTPS2'
 ufw allow 8080/tcp comment 'Web Admin'
 ufw allow 8888/tcp comment 'Nginx/OLS Admin'
 ufw allow 2222/tcp comment 'Control Panel'
+ufw allow OpenSSH
+ufw allow 'Nginx Full'
 
 ufw --force enable
 
