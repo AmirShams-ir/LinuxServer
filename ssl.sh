@@ -149,27 +149,6 @@ certbot certonly \
 rept "SSL certificate issued successfully"
 
 # ==============================================================================
-# Network Monitor
-# ==============================================================================
-info "Configuring vnStat..."
-
-systemctl enable --now vnstat
-
-rept "Network monitor enabled"
-
-# ==============================================================================
-# Cleanup
-# ==============================================================================
-info "Performing cleanup..."
-
-apt-get autoremove -y
-apt-get autoclean -y
-
-unset HOSTNAME DOMAIN FQDN ADMIN_EMAIL SERVER_IP DNS_IP TIMEZONE
-
-rept "Cleanup completed"
-
-# ==============================================================================
 # Final Summary
 # ==============================================================================
 info "══════════════════════════════════════════════"
@@ -177,3 +156,5 @@ rept "Hostname : $FQDN"
 rept "SSL/TLS  : Active"
 rept "Monitor  : vnStat enabled"
 info "══════════════════════════════════════════════"
+
+unset HOSTNAME DOMAIN FQDN ADMIN_EMAIL SERVER_IP DNS_IP TIMEZONE
