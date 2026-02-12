@@ -212,7 +212,4 @@ rept "Primary  : Official repositories (US)"
 rept "Fallback : Mirror repositories (IR)"
 info "══════════════════════════════════════════════"
 
-# ==============================================================================
-# Cleanup
-# ==============================================================================
 unset PRETTY OS_ID OS_VER MAIN_LIST IR_LIST PIN_FILE
