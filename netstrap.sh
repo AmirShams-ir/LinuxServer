@@ -237,9 +237,6 @@ info "Configuring vnStat..."
 
 systemctl enable --now vnstat
 
-apt-get autoremove -y
-apt-get autoclean -y
-
 rept "Network monitor enabled"
 
 # ==============================================================================
