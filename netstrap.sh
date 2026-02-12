@@ -88,7 +88,7 @@ info "Installing base packages..."
 apt-get update -y
 apt-get install -y \
   ca-certificates curl gnupg lsb-release unzip \
-  software-properties-common ufw \
+  software-properties-common \
   nginx certbot python3-certbot-nginx \
   mariadb-server \
   || die "Base package installation failed"
@@ -218,17 +218,6 @@ apt-get install -y phpmyadmin || warn "phpMyAdmin install failed"
 ln -sf /usr/share/phpmyadmin /var/www/phpmyadmin
 
 rept "phpMyAdmin configured"
-
-# ==============================================================================
-# Firewall
-# ==============================================================================
-info "Configuring firewall..."
-
-ufw allow OpenSSH
-ufw allow 'Nginx Full'
-ufw --force enable
-
-rept "Firewall configured"
 
 # ==============================================================================
 # Network Monitor
