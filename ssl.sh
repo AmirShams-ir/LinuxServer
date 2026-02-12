@@ -88,25 +88,6 @@ FQDN="${HOSTNAME}.${DOMAIN}"
 rept "Input validated"
 
 # ==============================================================================
-# Basic System Preparation
-# ==============================================================================
-info "Preparing base system..."
-
-hostnamectl set-hostname "$FQDN" || true
-grep -q "$FQDN" /etc/hosts || echo "127.0.1.1 $FQDN $HOSTNAME" >> /etc/hosts
-timedatectl set-timezone "$TIMEZONE" || true
-
-apt-get update || die "APT update failed"
-apt-get upgrade -y || die "System upgrade failed"
-
-apt-get install -y \
-  curl wget git unzip \
-  ca-certificates gnupg lsb-release \
-  dnsutils certbot vnstat
-
-rept "System prepared"
-
-# ==============================================================================
 # DNS A Record Validation
 # ==============================================================================
 info "Validating DNS A record..."
@@ -124,6 +105,92 @@ if [[ "$SERVER_IP" != "$DNS_IP" ]]; then
 fi
 
 rept "DNS A record verified"
+
+# ==============================================================================
+# Smart Basic System Preparation (Production Ready)
+# ==============================================================================
+info "Preparing base system (smart mode)..."
+
+# Detect Primary Public IPv4
+PUBLIC_IPV4=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}')
+
+if [[ -z "$PUBLIC_IPV4" ]] || [[ "$PUBLIC_IPV4" =~ ^10\. ]] || \
+   [[ "$PUBLIC_IPV4" =~ ^192\.168\. ]] || [[ "$PUBLIC_IPV4" =~ ^172\.(1[6-9]|2[0-9]|3[0-1])\. ]]; then
+    warn "Public IPv4 not detected or behind NAT. Using 127.0.1.1 fallback."
+    PUBLIC_IPV4="127.0.1.1"
+else
+    success "Detected Public IPv4: $PUBLIC_IPV4"
+fi
+
+# Detect IPv6 (if exists)
+PUBLIC_IPV6=$(ip -6 route get 2606:4700:4700::1111 2>/dev/null | awk '{print $7; exit}')
+
+if [[ -n "$PUBLIC_IPV6" ]]; then
+    success "Detected IPv6: $PUBLIC_IPV6"
+else
+    info "No IPv6 detected. Skipping IPv6 host entry."
+fi
+
+CURRENT_HOSTNAME=$(hostnamectl --static)
+
+if [[ "$CURRENT_HOSTNAME" != "$FQDN" ]]; then
+    hostnamectl set-hostname "$FQDN"
+    success "Hostname updated to $FQDN"
+else
+    info "Hostname already set correctly."
+fi
+
+cp /etc/hosts /etc/hosts.bak.$(date +%s)
+
+# Remove old entries for this hostname
+sed -i "/$FQDN/d" /etc/hosts
+
+# Ensure localhost entries exist
+grep -q "^127.0.0.1" /etc/hosts || echo "127.0.0.1 localhost" >> /etc/hosts
+grep -q "^::1" /etc/hosts || echo "::1 localhost ip6-localhost ip6-loopback" >> /etc/hosts
+
+# Add IPv4 entry
+echo "$PUBLIC_IPV4 $FQDN ${FQDN%%.*}" >> /etc/hosts
+
+# Add IPv6 entry if available
+if [[ -n "$PUBLIC_IPV6" ]]; then
+    echo "$PUBLIC_IPV6 $FQDN ${FQDN%%.*}" >> /etc/hosts
+fi
+
+success "/etc/hosts updated safely."
+
+info "Final hostname: $(hostname)"
+info "Hostname -f: $(hostname -f)"
+info "IPv4: $PUBLIC_IPV4"
+[[ -n "$PUBLIC_IPV6" ]] && info "IPv6: $PUBLIC_IPV6"
+
+success "Base system preparation completed."
+
+# ==============================================================================
+# Set Timezone
+# ==============================================================================
+
+if timedatectl list-timezones | grep -q "^$TIMEZONE$"; then
+    timedatectl set-timezone "$TIMEZONE"
+    success "Timezone set to $TIMEZONE"
+else
+    warn "Timezone $TIMEZONE not valid. Skipping."
+fi
+
+# ==============================================================================
+# Basic System Installation
+# ==============================================================================
+info "Preparing basic installation..."
+
+apt-get update || die "APT update failed"
+apt-get upgrade -y || die "System upgrade failed"
+
+apt-get install -y \
+  curl wget git unzip \
+  ca-certificates gnupg lsb-release \
+  dnsutils certbot vnstat
+
+rept "System prepared"
 
 # ==============================================================================
 # SSL Certificate (Standalone)
