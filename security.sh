@@ -69,7 +69,7 @@ info "════════════════════════�
 # ==============================================================================
 # Firewall (UFW)
 # ==============================================================================
-info "Installing UFW..."
+info "Installing and configuring UFW..."
 
 apt-get update || die "APT update failed"
 apt-get install -y ufw || die "UFW installation failed"
@@ -78,26 +78,13 @@ ufw --force reset
 ufw default deny incoming
 ufw default allow outgoing
 
-rept "Firewall installed"
-
-# ==============================================================================
-# Firewall Config
-# ==============================================================================
-info "Configuring UFW..."
-
 ufw allow 22/tcp comment 'SSH'
 ufw allow 80/tcp comment 'HTTP'
 ufw allow 443/tcp comment 'HTTPS'
-ufw allow 8443/tcp comment 'HTTPS2'
-ufw allow 8080/tcp comment 'Web Admin'
-ufw allow 8888/tcp comment 'Nginx/OLS Admin'
-ufw allow 2222/tcp comment 'Control Panel'
-ufw allow OpenSSH
-ufw allow 'Nginx Full'
 
 ufw --force enable
 
-rept "Firewall configured and enabled"
+rept "Firewall installed and configured and enabled"
 
 # ==============================================================================
 # Fail2Ban
