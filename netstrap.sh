@@ -231,6 +231,18 @@ ufw --force enable
 rept "Firewall configured"
 
 # ==============================================================================
+# Network Monitor
+# ==============================================================================
+info "Configuring vnStat..."
+
+systemctl enable --now vnstat
+
+apt-get autoremove -y
+apt-get autoclean -y
+
+rept "Network monitor enabled"
+
+# ==============================================================================
 # Cleanup
 # ==============================================================================
 info "Performing cleanup..."
