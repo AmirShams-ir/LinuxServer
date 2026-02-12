@@ -200,14 +200,19 @@ apt-get update || die "APT update failed"
 
 rept "APT update completed"
 
+info "APT verification (policy bash):"
+apt-cache policy bash | sed -n '1,15p'
+
 # ==============================================================================
 # Final Summary
 # ==============================================================================
 info "══════════════════════════════════════════════"
 rept "OS       : $PRETTY"
-rept "Primary  : Official repositories"
+rept "Primary  : Official repositories (US)"
 rept "Fallback : Mirror repositories (IR)"
 info "══════════════════════════════════════════════"
 
-info "APT verification (policy bash):"
-apt-cache policy bash | sed -n '1,15p'
+# ==============================================================================
+# Cleanup
+# ==============================================================================
+unset PRETTY OS_ID OS_VER MAIN_LIST IR_LIST PIN_FILE
