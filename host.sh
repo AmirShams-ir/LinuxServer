@@ -112,13 +112,25 @@ create_host() {
   chown -R "$USERNAME:$USERNAME" "$WEBROOT"
   echo "<?php phpinfo();" > "$WEBROOT/public_html/index.php"
 
-  cat > "/etc/php/$PHP_VERSION/fpm/pool.d/$USERNAME.conf" <<EOF
+SOCKET="/run/php/php-fpm-$USERNAME.sock"
+
+cat > "/etc/php/$PHP_VERSION/fpm/pool.d/$USERNAME.conf" <<EOF
 [$USERNAME]
 user = $USERNAME
 group = $USERNAME
+
 listen = $SOCKET
+listen.owner = www-data
+listen.group = www-data
+listen.mode = 0660
+
 pm = ondemand
 pm.max_children = 5
+pm.process_idle_timeout = 10s
+pm.max_requests = 500
+
+chdir = /
+security.limit_extensions = .php
 EOF
 
   systemctl reload "$PHP_FPM_SERVICE"
