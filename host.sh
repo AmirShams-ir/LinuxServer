@@ -79,15 +79,19 @@ detect_services() {
   command -v php >/dev/null || die "PHP not installed"
   PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
 
-  PHP_FPM_SERVICE=$(systemctl list-units --type=service --state=running \
-    | awk '/php.*fpm/ {print $1; exit}')
+  PHP_FPM_SERVICE="php${PHP_VERSION}-fpm"
 
-  [[ -n "$PHP_FPM_SERVICE" ]] || die "PHP-FPM not running"
+  systemctl list-unit-files | grep -q "^${PHP_FPM_SERVICE}.service" \
+    || die "PHP-FPM service not installed"
+
+  systemctl is-active --quiet "$PHP_FPM_SERVICE" \
+    || die "PHP-FPM not running"
 
   command -v mariadb >/dev/null || die "MariaDB not installed"
   systemctl is-active --quiet mariadb || die "MariaDB not running"
 
   rept "PHP $PHP_VERSION detected"
+  rept "PHP-FPM ($PHP_FPM_SERVICE) running"
   rept "MariaDB running"
 }
 
@@ -298,13 +302,13 @@ while true; do
   info "══════════════════════════════════════"
   info " Mini WHM – CLI"
   info "══════════════════════════════════════"
-  rept "1) Auto Install Requisites"
-  rept "2) Detect Services"
-  rept "3) Create Host"
-  rept "4) Delete Host"
-  rept "5) Suspend Host"
-  rept "6) Unsuspend Host"
-  rept "7) Exit"
+  info "1) Auto Install Requisites"
+  info "2) Detect Services"
+  info "3) Create Host"
+  info "4) Delete Host"
+  info "5) Suspend Host"
+  info "6) Unsuspend Host"
+  info "7) Exit"
   echo
   read -rp "Select option [1-7]: " C
 
