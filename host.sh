@@ -427,7 +427,7 @@ while true; do
   info "5) Unsuspend Host"
   info "6) List Accounts"
   info "7) Quota Status"
-  info "8) Cleanups"
+  info "8) Cleanup"
   info "9) Exit"
   echo
   read -rp "Select [1-7]: " C
@@ -439,8 +439,8 @@ while true; do
     4) suspend_host ;;
     5) unsuspend_host ;;
     6) list_accounts ;;
-    7) cleanup ;;
-    8) quota_status ;;
+    7) quota_status ;;
+    8) cleanup ;;
     9) exit 0 ;;
     *) warn "Invalid choice"; sleep 1 ;;
   esac
