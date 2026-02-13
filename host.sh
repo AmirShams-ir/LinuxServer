@@ -59,7 +59,7 @@ init_runtime() {
   PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
 
   PHP_FPM_SERVICE=$(systemctl list-unit-files --type=service \
-      | awk '/php.*-fpm.service/ {print $1; exit}')
+      | awk '/php.*-fpm.service/ {print $1}')
 
   [[ -n "$PHP_FPM_SERVICE" ]] || die "PHP-FPM not installed"
   systemctl is-active --quiet "$PHP_FPM_SERVICE" || die "PHP-FPM not running"
