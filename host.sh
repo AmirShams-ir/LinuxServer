@@ -49,7 +49,7 @@ PHP_VERSION=""
 PHP_FPM_SERVICE=""
 
 # ==============================================================================
-# Runtime Init (Lazy + Idempotent)
+# Runtime Init
 # ==============================================================================
 init_runtime() {
 
@@ -339,12 +339,86 @@ list_accounts() {
 }
 
 # ==============================================================================
+# Cleanup
+# ==============================================================================
+cleanup() {
+
+info "Performing cleanup..."
+
+  apt-get autoremove -y
+  apt-get autoclean -y
+  
+  unset PHP_VERSION
+  unset PHP_FPM_SERVICE
+
+  ok "Cleanup completed"
+  pause
+  }
+
+  # ==============================================================================
+# Quota Status
+# ==============================================================================
+quota_status() {
+
+  info "Quota Status Report"
+  echo
+
+  command -v quota >/dev/null || {
+    warn "Quota tools not installed"
+    pause
+    return
+  }
+
+  if [[ ! -s "$REGISTRY" ]]; then
+    warn "No hosting accounts found"
+    pause
+    return
+  fi
+
+  printf "%-15s %-10s %-10s %-10s %-8s\n" \
+    "USER" "USED(MB)" "SOFT(MB)" "HARD(MB)" "USE%"
+
+  printf "%-15s %-10s %-10s %-10s %-8s\n" \
+    "----" "--------" "--------" "--------" "-----"
+
+  while IFS='|' read -r USERNAME DOMAIN EMAIL STATUS; do
+
+    [[ "$STATUS" == "active" ]] || continue
+
+    Q=$(quota -u "$USERNAME" 2>/dev/null | awk 'NR==3')
+
+    if [[ -z "$Q" ]]; then
+      printf "%-15s %-10s %-10s %-10s %-8s\n" \
+        "$USERNAME" "N/A" "N/A" "N/A" "N/A"
+      continue
+    fi
+
+    USED=$(echo "$Q" | awk '{print int($2/1024)}')
+    SOFT=$(echo "$Q" | awk '{print int($3/1024)}')
+    HARD=$(echo "$Q" | awk '{print int($4/1024)}')
+
+    if [[ "$SOFT" -gt 0 ]]; then
+      PERCENT=$(( USED * 100 / SOFT ))
+    else
+      PERCENT="0"
+    fi
+
+    printf "%-15s %-10s %-10s %-10s %-8s\n" \
+      "$USERNAME" "$USED" "$SOFT" "$HARD" "$PERCENT%"
+
+  done < "$REGISTRY"
+
+  echo
+  pause
+}
+
+# ==============================================================================
 # Menu
 # ==============================================================================
 while true; do
   clear
   info "══════════════════════════════════════════════"
-  info " 🌐 Mini WHM CLI "
+  info "🌐 Mini WHM CLI"
   info "══════════════════════════════════════════════"
   info "1) Auto Install"
   info "2) Create Host"
@@ -352,7 +426,9 @@ while true; do
   info "4) Suspend Host"
   info "5) Unsuspend Host"
   info "6) List Accounts"
-  info "7) Exit"
+  info "7) Quota Status"
+  info "8) Cleanups"
+  info "9) Exit"
   echo
   read -rp "Select [1-7]: " C
 
@@ -363,7 +439,9 @@ while true; do
     4) suspend_host ;;
     5) unsuspend_host ;;
     6) list_accounts ;;
-    7) exit 0 ;;
+    7) cleanup ;;
+    8) quota_status ;;
+    9) exit 0 ;;
     *) warn "Invalid choice"; sleep 1 ;;
   esac
 done
