@@ -295,16 +295,16 @@ EOF
 # ==============================================================================
 while true; do
   clear
-  echo "══════════════════════════════════════"
-  echo " Mini WHM – CLI"
-  echo "══════════════════════════════════════"
-  echo "1) Auto Install Requisites"
-  echo "2) Detect Services"
-  echo "3) Create Host"
-  echo "4) Delete Host"
-  echo "5) Suspend Host"
-  echo "6) Unsuspend Host"
-  echo "7) Exit"
+  info "══════════════════════════════════════"
+  info " Mini WHM – CLI"
+  info "══════════════════════════════════════"
+  rept "1) Auto Install Requisites"
+  rept "2) Detect Services"
+  rept "3) Create Host"
+  rept "4) Delete Host"
+  rept "5) Suspend Host"
+  rept "6) Unsuspend Host"
+  rept "7) Exit"
   echo
   read -rp "Select option [1-7]: " C
 
