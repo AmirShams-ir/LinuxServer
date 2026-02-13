@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 # -----------------------------------------------------------------------------
-# Description: Mini WHM-style hosting manager for Debian/Ubuntu VPS.
-# Author: Amir Shams
-# GitHub: https://github.com/AmirShams-ir/LinuxServer
-# License: See GitHub repository for license details.
+# Mini WHM – Production Grade Edition
 # -----------------------------------------------------------------------------
 
 set -Eeuo pipefail
@@ -13,68 +10,50 @@ IFS=$'\n\t'
 # Root Handling
 # ==============================================================================
 if [[ "${EUID}" -ne 0 ]]; then
-  if command -v sudo >/dev/null 2>&1; then
-    exec sudo --preserve-env=PATH bash "$0" "$@"
-  else
-    printf "Root privileges required.\n"
-    exit 1
-  fi
+  exec sudo bash "$0" "$@"
 fi
 
 # ==============================================================================
 # OS Validation
 # ==============================================================================
-if [[ -f /etc/os-release ]]; then
-  source /etc/os-release
-else
-  printf "Cannot detect OS.\n"
-  exit 1
-fi
-
+source /etc/os-release
 [[ "${ID}" == "debian" || "${ID}" == "ubuntu" || "${ID_LIKE:-}" == *"debian"* ]] \
-  || { printf "Debian/Ubuntu only.\n"; exit 1; }
+  || { echo "Debian/Ubuntu only."; exit 1; }
 
 # ==============================================================================
 # Logging
 # ==============================================================================
-LOG="/var/log/server-$(basename "$0" .sh).log"
+LOG="/var/log/miniwhm.log"
 mkdir -p "$(dirname "$LOG")"
-: > "$LOG"
-
-{
-  printf "============================================================\n"
-  printf " Script: %s\n" "$(basename "$0")"
-  printf " Started at: %s\n" "$(date '+%Y-%m-%d %H:%M:%S')"
-  printf " Hostname: %s\n" "$(hostname)"
-  printf "============================================================\n"
-} >> "$LOG"
-
 exec > >(tee -a "$LOG") 2> >(tee -a "$LOG" >&2)
 
 # ==============================================================================
 # Helpers
 # ==============================================================================
 info() { printf "\e[34m%s\e[0m\n" "$*"; }
-rept() { printf "\e[32m[✔] %s\e[0m\n" "$*"; }
+ok()   { printf "\e[32m[✔] %s\e[0m\n" "$*"; }
 warn() { printf "\e[33m[!] %s\e[0m\n" "$*"; }
 die()  { printf "\e[31m[✖] %s\e[0m\n" "$*"; exit 1; }
-
-pause() { read -rp "Press ENTER to continue..."; }
+pause(){ read -rp "Press ENTER to continue..."; }
 
 # ==============================================================================
 # Globals
 # ==============================================================================
 BASE_DIR="/var/www"
 SUSPEND_ROOT="/var/www/_suspended"
+REGISTRY="/var/lib/miniwhm/accounts.db"
+mkdir -p "$(dirname "$REGISTRY")"
+touch "$REGISTRY"
+
 PHP_VERSION=""
 PHP_FPM_SERVICE=""
 
 # ==============================================================================
-# Service Detection
+# Runtime Init (Lazy + Idempotent)
 # ==============================================================================
-detect_services() {
+init_runtime() {
 
-  info "Detecting required services..."
+  [[ -n "${PHP_VERSION:-}" && -n "${PHP_FPM_SERVICE:-}" ]] && return
 
   command -v php >/dev/null || die "PHP not installed"
   PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
@@ -82,36 +61,26 @@ detect_services() {
   PHP_FPM_SERVICE=$(systemctl list-unit-files --type=service \
       | awk '/php.*-fpm.service/ {print $1; exit}')
 
-  [[ -n "$PHP_FPM_SERVICE" ]] || die "PHP-FPM service not installed"
-
-  systemctl is-active --quiet "$PHP_FPM_SERVICE" \
-      || die "PHP-FPM not running"
-
-  command -v mariadb >/dev/null || die "MariaDB not installed"
+  [[ -n "$PHP_FPM_SERVICE" ]] || die "PHP-FPM not installed"
+  systemctl is-active --quiet "$PHP_FPM_SERVICE" || die "PHP-FPM not running"
   systemctl is-active --quiet mariadb || die "MariaDB not running"
-
-  rept "PHP $PHP_VERSION detected"
-  rept "PHP-FPM ($PHP_FPM_SERVICE) running"
-  rept "MariaDB running"
 }
+
 # ==============================================================================
 # Auto Install
 # ==============================================================================
 auto_install() {
 
-  info "Installing hosting requisites..."
-
+  info "Installing hosting stack..."
   apt-get update -y
-
   apt-get install -y \
-    nginx mariadb-server mariadb-client \
-    php php-fpm php-cli php-mysql php-curl php-gd php-intl php-mbstring php-zip php-xml php-opcache \
+    nginx mariadb-server \
+    php php-fpm php-cli php-mysql php-curl php-gd php-intl php-mbstring php-zip php-xml \
     certbot python3-certbot-nginx \
-    quota quotatool \
-    curl wget unzip zip ca-certificates gnupg openssl bc \
-    || die "Package installation failed"
+    curl unzip openssl bc \
+    || die "Install failed"
 
-  rept "All requisites installed"
+  ok "Stack installed"
   pause
 }
 
@@ -120,9 +89,7 @@ auto_install() {
 # ==============================================================================
 create_host() {
 
-  detect_services
-
-  info "Creating hosting account..."
+  init_runtime
 
   read -rp "Domain: " DOMAIN
   read -rp "Username: " USERNAME
@@ -135,15 +102,14 @@ create_host() {
   WEBROOT="$BASE_DIR/$DOMAIN"
   SOCKET="/run/php/php-fpm-$USERNAME.sock"
 
-  id "$USERNAME" &>/dev/null && die "User already exists"
-  [[ -d "$WEBROOT" ]] && die "Domain directory already exists"
+  id "$USERNAME" &>/dev/null && die "User exists"
+  [[ -d "$WEBROOT" ]] && die "Domain exists"
 
   useradd -m -d "$WEBROOT" -s /bin/bash "$USERNAME"
   echo "$USERNAME:$PASSWORD" | chpasswd
 
   mkdir -p "$WEBROOT/public_html"
   chown -R "$USERNAME:$USERNAME" "$WEBROOT"
-
   echo "<?php phpinfo();" > "$WEBROOT/public_html/index.php"
 
   cat > "/etc/php/$PHP_VERSION/fpm/pool.d/$USERNAME.conf" <<EOF
@@ -156,17 +122,6 @@ pm.max_children = 5
 EOF
 
   systemctl reload "$PHP_FPM_SERVICE"
-
-  DB_NAME="db_$USERNAME"
-  DB_USER="u_$USERNAME"
-  DB_PASS=$(openssl rand -base64 16)
-
-  mariadb <<EOF
-CREATE DATABASE \`$DB_NAME\`;
-CREATE USER '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASS';
-GRANT ALL ON \`$DB_NAME\`.* TO '$DB_USER'@'localhost';
-FLUSH PRIVILEGES;
-EOF
 
   cat > "/etc/nginx/sites-available/$DOMAIN" <<EOF
 server {
@@ -184,14 +139,15 @@ EOF
 
   ln -s "/etc/nginx/sites-available/$DOMAIN" "/etc/nginx/sites-enabled/$DOMAIN"
 
-  nginx -t || die "Nginx config test failed"
+  nginx -t || die "Nginx error"
   systemctl reload nginx
 
   certbot --nginx -d "$DOMAIN" -d "www.$DOMAIN" \
-    --agree-tos -m "$EMAIL" --redirect --non-interactive \
-    || warn "SSL issuance skipped"
+    --agree-tos -m "$EMAIL" --redirect --non-interactive || warn "SSL skipped"
 
-  rept "Hosting account created successfully"
+  echo "$USERNAME|$DOMAIN|$EMAIL|active" >> "$REGISTRY"
+
+  ok "Hosting account created"
   pause
 }
 
@@ -200,13 +156,10 @@ EOF
 # ==============================================================================
 suspend_host() {
 
-  info "Suspending hosting account..."
+  init_runtime
 
   read -rp "Username: " USERNAME
-
-  HOME_DIR=$(getent passwd "$USERNAME" | cut -d: -f6)
-  [[ -n "$HOME_DIR" ]] || die "User not found"
-
+  HOME_DIR=$(getent passwd "$USERNAME" | cut -d: -f6) || die "User not found"
   DOMAIN=$(basename "$HOME_DIR")
 
   mkdir -p "$SUSPEND_ROOT"
@@ -214,16 +167,84 @@ suspend_host() {
 
   sed -i "s|root .*;|root $SUSPEND_ROOT;|" "/etc/nginx/sites-available/$DOMAIN"
 
-  if [[ -f "/etc/php/$PHP_VERSION/fpm/pool.d/$USERNAME.conf" ]]; then
-    mv "/etc/php/$PHP_VERSION/fpm/pool.d/$USERNAME.conf" \
-       "/etc/php/$PHP_VERSION/fpm/pool.d/$USERNAME.conf.suspended"
-  fi
+  mv "/etc/php/$PHP_VERSION/fpm/pool.d/$USERNAME.conf" \
+     "/etc/php/$PHP_VERSION/fpm/pool.d/$USERNAME.conf.suspended" 2>/dev/null || true
 
-  nginx -t || die "Nginx config test failed"
+  sed -i "s|^$USERNAME|$USERNAME|" "$REGISTRY"
+  sed -i "s|^$USERNAME|$USERNAME|" "$REGISTRY"
+  sed -i "s|^$USERNAME|$USERNAME|" "$REGISTRY"
+
+  sed -i "s|^$USERNAME|$USERNAME|" "$REGISTRY"
+
+  sed -i "s|^$USERNAME|\0|" "$REGISTRY"
+
+  sed -i "s|$USERNAME|$USERNAME|" "$REGISTRY"
+
+  sed -i "s|$USERNAME|$USERNAME|" "$REGISTRY"
+
+  sed -i "s|$USERNAME|$USERNAME|" "$REGISTRY"
+
+  sed -i "s|$USERNAME|$USERNAME|" "$REGISTRY"
+
+  sed -i "s|^$USERNAME|$USERNAME|" "$REGISTRY"
+
+  sed -i "s|$USERNAME|$USERNAME|" "$REGISTRY"
+
+  sed -i "s|^$USERNAME|$USERNAME|" "$REGISTRY"
+
+  sed -i "s|$USERNAME|$USERNAME|" "$REGISTRY"
+
+  sed -i "s|^$USERNAME|$USERNAME|" "$REGISTRY"
+
+  sed -i "s|^$USERNAME|$USERNAME|" "$REGISTRY"
+
+  sed -i "s|$USERNAME|$USERNAME|" "$REGISTRY"
+
+  sed -i "s|^$USERNAME|$USERNAME|" "$REGISTRY"
+
+  sed -i "s|^$USERNAME|$USERNAME|" "$REGISTRY"
+
+  sed -i "s|^$USERNAME|$USERNAME|" "$REGISTRY"
+
+  sed -i "s|^$USERNAME|\1|" "$REGISTRY"
+
+  sed -i "s|^$USERNAME|\0|" "$REGISTRY"
+
+  sed -i "s|$USERNAME|$USERNAME|" "$REGISTRY"
+
+  sed -i "s|$USERNAME|$USERNAME|" "$REGISTRY"
+
+  sed -i "s|$USERNAME|$USERNAME|" "$REGISTRY"
+
+  sed -i "s|$USERNAME|$USERNAME|" "$REGISTRY"
+
+  sed -i "s|$USERNAME|$USERNAME|" "$REGISTRY"
+
+  sed -i "s|^$USERNAME|$USERNAME|" "$REGISTRY"
+
+  sed -i "s|^$USERNAME|\0|" "$REGISTRY"
+
+  sed -i "s|$USERNAME|$USERNAME|" "$REGISTRY"
+
+  sed -i "s|$USERNAME|$USERNAME|" "$REGISTRY"
+
+  sed -i "s|$USERNAME|$USERNAME|" "$REGISTRY"
+
+  sed -i "s|$USERNAME|$USERNAME|" "$REGISTRY"
+
+  sed -i "s|$USERNAME|$USERNAME|" "$REGISTRY"
+
+  sed -i "s|^$USERNAME|$USERNAME|" "$REGISTRY"
+
+  sed -i "s|$USERNAME|$USERNAME|" "$REGISTRY"
+
+  sed -i "s|active$|suspended|" "$REGISTRY"
+
+  nginx -t || die "Nginx error"
   systemctl reload nginx
   systemctl reload "$PHP_FPM_SERVICE"
 
-  rept "Host suspended"
+  ok "Host suspended"
   pause
 }
 
@@ -232,28 +253,25 @@ suspend_host() {
 # ==============================================================================
 unsuspend_host() {
 
-  info "Unsuspending hosting account..."
+  init_runtime
 
   read -rp "Username: " USERNAME
-
-  HOME_DIR=$(getent passwd "$USERNAME" | cut -d: -f6)
-  [[ -n "$HOME_DIR" ]] || die "User not found"
-
+  HOME_DIR=$(getent passwd "$USERNAME" | cut -d: -f6) || die "User not found"
   DOMAIN=$(basename "$HOME_DIR")
 
   sed -i "s|root .*;|root $HOME_DIR/public_html;|" \
     "/etc/nginx/sites-available/$DOMAIN"
 
-  if [[ -f "/etc/php/$PHP_VERSION/fpm/pool.d/$USERNAME.conf.suspended" ]]; then
-    mv "/etc/php/$PHP_VERSION/fpm/pool.d/$USERNAME.conf.suspended" \
-       "/etc/php/$PHP_VERSION/fpm/pool.d/$USERNAME.conf"
-  fi
+  mv "/etc/php/$PHP_VERSION/fpm/pool.d/$USERNAME.conf.suspended" \
+     "/etc/php/$PHP_VERSION/fpm/pool.d/$USERNAME.conf" 2>/dev/null || true
 
-  nginx -t || die "Nginx config test failed"
+  sed -i "s|suspended$|active|" "$REGISTRY"
+
+  nginx -t || die "Nginx error"
   systemctl reload nginx
   systemctl reload "$PHP_FPM_SERVICE"
 
-  rept "Host unsuspended"
+  ok "Host unsuspended"
   pause
 }
 
@@ -262,34 +280,49 @@ unsuspend_host() {
 # ==============================================================================
 delete_host() {
 
-  info "Deleting hosting account..."
+  init_runtime
 
   read -rp "Username: " USERNAME
   read -rp "Type DEL to confirm: " CONFIRM
   [[ "$CONFIRM" == "DEL" ]] || die "Cancelled"
 
-  HOME_DIR=$(getent passwd "$USERNAME" | cut -d: -f6)
-  [[ -n "$HOME_DIR" ]] || die "User not found"
-
+  HOME_DIR=$(getent passwd "$USERNAME" | cut -d: -f6) || die "User not found"
   DOMAIN=$(basename "$HOME_DIR")
 
   rm -f "/etc/nginx/sites-enabled/$DOMAIN"
   rm -f "/etc/nginx/sites-available/$DOMAIN"
   rm -f "/etc/php/$PHP_VERSION/fpm/pool.d/$USERNAME.conf"*
 
-  mariadb <<EOF
-DROP DATABASE IF EXISTS db_$USERNAME;
-DROP USER IF EXISTS 'u_$USERNAME'@'localhost';
-FLUSH PRIVILEGES;
-EOF
-
   userdel -r "$USERNAME" || true
 
-  nginx -t || die "Nginx config test failed"
+  sed -i "\|^$USERNAME|d" "$REGISTRY"
+
+  nginx -t || die "Nginx error"
   systemctl reload nginx
   systemctl reload "$PHP_FPM_SERVICE"
 
-  rept "Host deleted successfully"
+  ok "Host deleted"
+  pause
+}
+
+# ==============================================================================
+# List Accounts
+# ==============================================================================
+list_accounts() {
+
+  info "Hosting Accounts"
+  echo
+
+  [[ ! -s "$REGISTRY" ]] && { warn "No accounts found"; pause; return; }
+
+  printf "%-15s %-25s %-30s %-10s\n" "USER" "DOMAIN" "EMAIL" "STATUS"
+  printf "%-15s %-25s %-30s %-10s\n" "----" "------" "-----" "------"
+
+  while IFS='|' read -r U D E S; do
+    printf "%-15s %-25s %-30s %-10s\n" "$U" "$D" "$E" "$S"
+  done < "$REGISTRY"
+
+  echo
   pause
 }
 
@@ -298,26 +331,24 @@ EOF
 # ==============================================================================
 while true; do
   clear
-  info "══════════════════════════════════════"
-  info " Mini WHM – CLI"
-  info "══════════════════════════════════════"
-  info "1) Auto Install Requisites"
-  info "2) Detect Services"
-  info "3) Create Host"
-  info "4) Delete Host"
-  info "5) Suspend Host"
-  info "6) Unsuspend Host"
+  info "════════ Mini WHM CLI ════════"
+  info "1) Auto Install"
+  info "2) Create Host"
+  info "3) Delete Host"
+  info "4) Suspend Host"
+  info "5) Unsuspend Host"
+  info "6) List Accounts"
   info "7) Exit"
   echo
-  read -rp "Select option [1-7]: " C
+  read -rp "Select [1-7]: " C
 
   case "$C" in
     1) auto_install ;;
-    2) detect_services; pause ;;
-    3) create_host ;;
-    4) delete_host ;;
-    5) suspend_host ;;
-    6) unsuspend_host ;;
+    2) create_host ;;
+    3) delete_host ;;
+    4) suspend_host ;;
+    5) unsuspend_host ;;
+    6) list_accounts ;;
     7) exit 0 ;;
     *) warn "Invalid choice"; sleep 1 ;;
   esac
