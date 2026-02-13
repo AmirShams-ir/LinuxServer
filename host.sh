@@ -79,13 +79,13 @@ detect_services() {
   command -v php >/dev/null || die "PHP not installed"
   PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
 
-  PHP_FPM_SERVICE="php${PHP_VERSION}-fpm"
+  PHP_FPM_SERVICE=$(systemctl list-unit-files --type=service \
+      | awk '/php.*-fpm.service/ {print $1; exit}')
 
-  systemctl list-unit-files | grep -q "^${PHP_FPM_SERVICE}.service" \
-    || die "PHP-FPM service not installed"
+  [[ -n "$PHP_FPM_SERVICE" ]] || die "PHP-FPM service not installed"
 
   systemctl is-active --quiet "$PHP_FPM_SERVICE" \
-    || die "PHP-FPM not running"
+      || die "PHP-FPM not running"
 
   command -v mariadb >/dev/null || die "MariaDB not installed"
   systemctl is-active --quiet mariadb || die "MariaDB not running"
@@ -94,7 +94,6 @@ detect_services() {
   rept "PHP-FPM ($PHP_FPM_SERVICE) running"
   rept "MariaDB running"
 }
-
 # ==============================================================================
 # Auto Install
 # ==============================================================================
