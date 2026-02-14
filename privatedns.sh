@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # -----------------------------------------------------------------------------
-# Description: Private DNS Server and harden a fresh Debian/Ubuntu VPS.
+# Description: Private DNS Server (Unbound) a fresh Debian/Ubuntu VPS.
 # Author: Amir Shams
 # GitHub: https://github.com/AmirShams-ir/LinuxServer
 # License: See GitHub repository for license details.
@@ -70,12 +70,22 @@ info "════════════════════════�
 info "✔ Private DNS Script Started"
 info "═══════════════════════════════════════════"
 
-
+# ==============================================================================
+# Install
+# ==============================================================================
 info "Installing Unbound..."
 apt update -y
-apt install -y unbound
+apt install -y unbound dnsutils
 
-info "Creating optimized configuration..."
+# ==============================================================================
+# Clean Old DNSSEC Anchor (Prevents Crash)
+# ==============================================================================
+rm -f /var/lib/unbound/root.key 2>/dev/null || true
+
+# ==============================================================================
+# Write Config
+# ==============================================================================
+info "Writing optimized config..."
 
 cat > /etc/unbound/unbound.conf.d/hosting.conf << 'EOF'
 server:
@@ -91,71 +101,68 @@ server:
     cache-min-ttl: 300
     cache-max-ttl: 86400
     prefetch: yes
-    prefetch-key: yes
     serve-expired: yes
-    serve-expired-ttl: 86400
-    serve-expired-reply-ttl: 30
 
-    # Security hardening
+    # Security
     hide-identity: yes
     hide-version: yes
     harden-glue: yes
-    harden-dnssec-stripped: yes
     harden-referral-path: yes
-    unwanted-reply-threshold: 10000000
     qname-minimisation: yes
 
-    # DNSSEC
-    auto-trust-anchor-file: "/var/lib/unbound/root.key"
-
-    # IPv4 only
+    # IPv4 stable mode
     do-ip4: yes
     do-ip6: no
 
-    # Improve reliability
     edns-buffer-size: 1232
 
 forward-zone:
     name: "."
     forward-first: yes
 
-    # Cloudflare
     forward-addr: 1.1.1.1
     forward-addr: 1.0.0.1
-
-    # Google
     forward-addr: 8.8.8.8
     forward-addr: 8.8.4.4
-
-    # Quad9
     forward-addr: 9.9.9.9
+    forward-addr: 149.112.112.112
 EOF
 
-info "Downloading root trust anchor..."
-unbound-anchor -a "/var/lib/unbound/root.key" || true
+# ==============================================================================
+# Validate Config Before Restart
+# ==============================================================================
+info "Validating config..."
+unbound-checkconf || { echo "Config error! Aborting."; exit 1; }
 
-info "Setting system resolver to 127.0.0.1..."
+# ==============================================================================
+# Resolver Setup
+# ==============================================================================
+info "Setting system resolver..."
 
-# Disable systemd-resolved if active
-if systemctl is-active --quiet systemd-resolved; then
-    systemctl disable systemd-resolved
-    systemctl stop systemd-resolved
-    rm -f /etc/resolv.conf
-fi
+# Unlock resolv.conf if immutable
+chattr -i /etc/resolv.conf 2>/dev/null || true
 
 echo "nameserver 127.0.0.1" > /etc/resolv.conf
-
 chattr +i /etc/resolv.conf 2>/dev/null || true
 
-echo "[+] Restarting Unbound..."
+# ==============================================================================
+# Start Service
+# ==============================================================================
+info "Restarting Unbound..."
 systemctl enable unbound
 systemctl restart unbound
 
 sleep 2
 
-info "Testing resolution..."
-dig google.com @127.0.0.1 +short || true
+# ==============================================================================
+# Test
+# ==============================================================================
+info "Testing DNS..."
+dig google.com @127.0.0.1 +short || echo "DNS test failed"
 
+# ==============================================================================
+# Reports
+# ==============================================================================
 info "══════════════════════════════════════════════════"
 rept " DNS setup completed successfully."
 rept " Primary DNS: 127.0.0.1"
