@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # -----------------------------------------------------------------------------
-# Mini WHM – Production Grade Edition
+# Description: Host manager (Mini WHM) for Debian/Ubuntu VPS environments.
+# Author: Amir Shams
+# GitHub: https://github.com/AmirShams-ir/LinuxServer
+# License: See GitHub repository for license details.
 # -----------------------------------------------------------------------------
 
 set -Eeuo pipefail
@@ -318,7 +321,7 @@ delete_host() {
 }
 
 # ==============================================================================
-# List Accounts
+# List Accounts (With Quota)
 # ==============================================================================
 list_accounts() {
 
@@ -327,11 +330,39 @@ list_accounts() {
 
   [[ ! -s "$REGISTRY" ]] && { warn "No accounts found"; pause; return; }
 
-  printf "%-15s %-25s %-30s %-10s\n" "USER" "DOMAIN" "EMAIL" "STATUS"
-  printf "%-15s %-25s %-30s %-10s\n" "----" "------" "-----" "------"
+  printf "%-15s %-20s %-25s %-10s %-8s\n" \
+    "USER" "DOMAIN" "STATUS" "USED(MB)" "USE%"
+
+  printf "%-15s %-20s %-25s %-10s %-8s\n" \
+    "----" "------" "------" "--------" "-----"
 
   while IFS='|' read -r U D E S; do
-    printf "%-15s %-25s %-30s %-10s\n" "$U" "$D" "$E" "$S"
+
+    USED="N/A"
+    PERCENT="N/A"
+
+    if command -v quota >/dev/null && [[ "$S" == "active" ]]; then
+
+      Q=$(quota -u "$U" 2>/dev/null | awk 'NR==3')
+
+      if [[ -n "$Q" ]]; then
+        USED_MB=$(echo "$Q" | awk '{print int($2/1024)}')
+        SOFT_MB=$(echo "$Q" | awk '{print int($3/1024)}')
+
+        if [[ "$SOFT_MB" -gt 0 ]]; then
+          PERCENT=$(( USED_MB * 100 / SOFT_MB ))
+        else
+          PERCENT="0"
+        fi
+
+        USED="$USED_MB"
+        PERCENT="${PERCENT}%"
+      fi
+    fi
+
+    printf "%-15s %-20s %-25s %-10s %-8s\n" \
+      "$U" "$D" "$S" "$USED" "$PERCENT"
+
   done < "$REGISTRY"
 
   echo
@@ -355,7 +386,7 @@ info "Performing cleanup..."
   pause
   }
 
-  # ==============================================================================
+# ==============================================================================
 # Quota Status
 # ==============================================================================
 quota_status() {
@@ -413,6 +444,72 @@ quota_status() {
 }
 
 # ==============================================================================
+# Install WordPress
+# ==============================================================================
+install_wordpress() {
+
+  init_runtime
+
+  info "WordPress Installer"
+  echo
+
+  read -rp "Username: " USERNAME
+
+  HOME_DIR=$(getent passwd "$USERNAME" | cut -d: -f6) || die "User not found"
+  DOMAIN=$(basename "$HOME_DIR")
+  WEBROOT="$HOME_DIR/public_html"
+
+  [[ -d "$WEBROOT" ]] || die "Webroot not found"
+
+  read -rp "Admin Email: " EMAIL
+
+  DB_NAME="wp_${USERNAME}"
+  DB_USER="u_${USERNAME}"
+  DB_PASS=$(openssl rand -base64 16 | tr -dc a-zA-Z0-9 | head -c 16)
+
+  info "Creating database..."
+
+  mysql -e "CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+  mysql -e "CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';"
+  mysql -e "GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';"
+  mysql -e "FLUSH PRIVILEGES;"
+
+  ok "Database ready"
+
+  info "Downloading WordPress..."
+
+  cd /tmp
+  curl -s https://wordpress.org/latest.tar.gz -o wp.tar.gz
+  tar -xzf wp.tar.gz
+
+  rm -rf "$WEBROOT"/*
+  mv wordpress/* "$WEBROOT"
+  rm -rf wordpress wp.tar.gz
+
+  chown -R "$USERNAME:$USERNAME" "$WEBROOT"
+
+  cp "$WEBROOT/wp-config-sample.php" "$WEBROOT/wp-config.php"
+
+  sed -i "s/database_name_here/${DB_NAME}/" "$WEBROOT/wp-config.php"
+  sed -i "s/username_here/${DB_USER}/" "$WEBROOT/wp-config.php"
+  sed -i "s/password_here/${DB_PASS}/" "$WEBROOT/wp-config.php"
+
+  SALT=$(curl -s https://api.wordpress.org/secret-key/1.1/salt/)
+  sed -i "/AUTH_KEY/d" "$WEBROOT/wp-config.php"
+  echo "$SALT" >> "$WEBROOT/wp-config.php"
+
+  ok "WordPress installed successfully"
+  echo
+  echo "🌍 URL: https://${DOMAIN}"
+  echo "🗄 DB: ${DB_NAME}"
+  echo "👤 DB User: ${DB_USER}"
+  echo "🔐 DB Pass: ${DB_PASS}"
+  echo
+
+  pause
+}
+
+# ==============================================================================
 # Menu
 # ==============================================================================
 while true; do
@@ -426,11 +523,11 @@ while true; do
   info "4) Suspend Host"
   info "5) Unsuspend Host"
   info "6) List Accounts"
-  info "7) Quota Status"
+  info "7) Install WordPress"
   info "8) Cleanup"
   info "9) Exit"
   echo
-  read -rp "Select [1-7]: " C
+  read -rp "Select [1-9]: " C
 
   case "$C" in
     1) auto_install ;;
@@ -439,7 +536,7 @@ while true; do
     4) suspend_host ;;
     5) unsuspend_host ;;
     6) list_accounts ;;
-    7) quota_status ;;
+    7) install_wordpress ;;
     8) cleanup ;;
     9) exit 0 ;;
     *) warn "Invalid choice"; sleep 1 ;;
