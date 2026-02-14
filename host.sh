@@ -444,7 +444,7 @@ quota_status() {
 }
 
 # ==============================================================================
-# Install WordPress
+# Install WordPress (Hardened & Fixed)
 # ==============================================================================
 install_wordpress() {
 
@@ -461,26 +461,33 @@ install_wordpress() {
 
   [[ -d "$WEBROOT" ]] || die "Webroot not found"
 
-  read -rp "Admin Email: " EMAIL
+  if [[ -f "$WEBROOT/wp-config.php" ]]; then
+    die "WordPress already installed (wp-config exists)"
+  fi
 
   DB_NAME="wp_${USERNAME}"
   DB_USER="u_${USERNAME}"
-  DB_PASS=$(openssl rand -base64 16 | tr -dc a-zA-Z0-9 | head -c 16)
+  DB_PASS=$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 18)
 
-  info "Creating database..."
+  info "Preparing database..."
 
   mysql -e "CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-  mysql -e "CREATE USER '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}' OR REPLACE;"
+  mysql -e "DROP USER IF EXISTS '${DB_USER}'@'localhost';"
+  mysql -e "CREATE USER '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';"
   mysql -e "GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';"
   mysql -e "FLUSH PRIVILEGES;"
+
+  # Test DB connection
+  mysql -u "${DB_USER}" -p"${DB_PASS}" "${DB_NAME}" -e "SELECT 1;" \
+    || die "Database connection test failed"
 
   ok "Database ready"
 
   info "Downloading WordPress..."
 
   cd /tmp
-  curl -s https://wordpress.org/latest.tar.gz -o wp.tar.gz
-  tar -xzf wp.tar.gz
+  curl -s https://wordpress.org/latest.tar.gz -o wp.tar.gz || die "Download failed"
+  tar -xzf wp.tar.gz || die "Extraction failed"
 
   rm -rf "$WEBROOT"/*
   mv wordpress/* "$WEBROOT"
@@ -488,15 +495,29 @@ install_wordpress() {
 
   chown -R "$USERNAME:$USERNAME" "$WEBROOT"
 
+  # Create wp-config
   cp "$WEBROOT/wp-config-sample.php" "$WEBROOT/wp-config.php"
 
   sed -i "s/database_name_here/${DB_NAME}/" "$WEBROOT/wp-config.php"
   sed -i "s/username_here/${DB_USER}/" "$WEBROOT/wp-config.php"
   sed -i "s/password_here/${DB_PASS}/" "$WEBROOT/wp-config.php"
 
-  SALT=$(curl -s https://api.wordpress.org/secret-key/1.1/salt/)
-  sed -i "/AUTH_KEY/d" "$WEBROOT/wp-config.php"
-  echo "$SALT" >> "$WEBROOT/wp-config.php"
+  # Clean replace SALT block properly
+  SALT=$(curl -s https://api.wordpress.org/secret-key/1.1/salt/) || die "SALT fetch failed"
+
+  sed -i "/AUTH_KEY/,/NONCE_SALT/d" "$WEBROOT/wp-config.php"
+  sed -i "/@-/a $SALT" "$WEBROOT/wp-config.php"
+
+  # Force HTTPS consistency
+  sed -i "/\/\* Add any custom values/i \
+  define('WP_HOME','https://${DOMAIN}');\n\
+  define('WP_SITEURL','https://${DOMAIN}');\n\
+  define('COOKIE_DOMAIN', false);\n\
+  define('FORCE_SSL_ADMIN', true);\n" \
+  "$WEBROOT/wp-config.php"
+
+  chown "$USERNAME:$USERNAME" "$WEBROOT/wp-config.php"
+  chmod 640 "$WEBROOT/wp-config.php"
 
   ok "WordPress installed successfully"
   echo
@@ -515,7 +536,7 @@ install_wordpress() {
 while true; do
   clear
   info "══════════════════════════════════════════════"
-  info "🌐 Mini WHM CLI"
+  info "🌐 Mini WHM CLI Menu"
   info "══════════════════════════════════════════════"
   info "1) Auto Install"
   info "2) Create Host"
