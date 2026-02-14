@@ -108,7 +108,7 @@ server:
     # DNSSEC
     auto-trust-anchor-file: "/var/lib/unbound/root.key"
 
-    # IPv4 only (برای ایران پایدارتر)
+    # IPv4 only
     do-ip4: yes
     do-ip6: no
 
