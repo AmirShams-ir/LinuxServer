@@ -108,7 +108,7 @@ action = %(action_)s
 
 [sshd]
 enabled = true
-port = ${SSH_PORT}
+port = 22
 EOF
 
 systemctl enable --now fail2ban
