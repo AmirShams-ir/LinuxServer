@@ -91,29 +91,71 @@ rept "Firewall installed and configured and enabled"
 # ==============================================================================
 info "Installing and configuring Fail2Ban..."
 
-apt-get install -y fail2ban || die "Fail2Ban installation failed"
+apt-get update -y
+apt-get install -y fail2ban apache2-utils || die "Fail2Ban installation failed"
 
-mkdir -p /etc/fail2ban
+mkdir -p /etc/fail2ban/filter.d
 
-cat > /etc/fail2ban/jail.local <<EOF
+# ------------------------------------------------------------------------------
+# phpMyAdmin filter
+# ------------------------------------------------------------------------------
+cat > /etc/fail2ban/filter.d/phpmyadmin.conf <<'EOF'
+[Definition]
+failregex = ^<HOST> -.*"(POST).*/index\.php.*" (200|302)
+ignoreregex =
+EOF
+
+# ------------------------------------------------------------------------------
+# Jail Configuration
+# ------------------------------------------------------------------------------
+cat > /etc/fail2ban/jail.local <<'EOF'
 [DEFAULT]
 bantime  = 1h
 findtime = 10m
 maxretry = 4
 backend  = systemd
 usedns   = warn
+banaction = iptables-multiport
 destemail = root@localhost
 sendername = Fail2Ban
 action = %(action_)s
 
+# ----------------------
+# SSH Protection
+# ----------------------
 [sshd]
 enabled = true
-port = 22
+port    = 22
+logpath = /var/log/auth.log
+
+# ----------------------
+# Nginx Basic Auth
+# ----------------------
+[nginx-http-auth]
+enabled  = true
+port     = http,https
+filter   = nginx-http-auth
+logpath  = /var/log/nginx/error.log
+maxretry = 5
+
+# ----------------------
+# phpMyAdmin Login Protection
+# ----------------------
+[phpmyadmin]
+enabled  = true
+port     = http,https
+filter   = phpmyadmin
+logpath  = /var/log/nginx/access.log
+maxretry = 5
 EOF
 
-systemctl enable --now fail2ban
+systemctl enable fail2ban
+systemctl restart fail2ban || die "Fail2Ban failed to start"
 
-rept "Fail2Ban active"
+sleep 2
+fail2ban-client status
+
+rept "Fail2Ban fully hardened and active"
 
 # ==============================================================================
 # Kernel Hardening
