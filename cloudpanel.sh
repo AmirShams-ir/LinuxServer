@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # -----------------------------------------------------------------------------
-# Description: Bootstrap and harden a fresh Debian/Ubuntu VPS.
+# Description: Install Cloud Panel a fresh Debian/Ubuntu VPS.
 # Author: Amir Shams
 # GitHub: https://github.com/AmirShams-ir/LinuxServer
 # License: See GitHub repository for license details.
