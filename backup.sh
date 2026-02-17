@@ -1,13 +1,76 @@
 #!/usr/bin/env bash
-# ==============================================================================
-# WordPress Multi-Site Smart Backup
-# Optimized for 1GB VPS
-# Backups: DB + wp-content only
-# Upload: rclone (Google Drive / crypt remote)
-# Retention: keep last 3 backups per site
-# ==============================================================================
+# -----------------------------------------------------------------------------
+# Description: Backup for Debian/Ubuntu VPS.
+# Author: Amir Shams
+# GitHub: https://github.com/AmirShams-ir/LinuxServer
+# License: See GitHub repository for license details.
+# -----------------------------------------------------------------------------
 
 set -euo pipefail
+IFS=$'\n\t'
+
+apt install rclone -y
+
+# ==============================================================================
+# Root Handling
+# ==============================================================================
+if [[ "${EUID}" -ne 0 ]]; then
+  if command -v sudo >/dev/null 2>&1; then
+    exec sudo --preserve-env=PATH bash "$0" "$@"
+  else
+    printf "Root privileges required.\n"
+    exit 1
+  fi
+fi
+
+# ==============================================================================
+# OS Validation
+# ==============================================================================
+if [[ -f /etc/os-release ]]; then
+  source /etc/os-release
+else
+  printf "Cannot detect OS.\n"
+  exit 1
+fi
+
+[[ "${ID}" == "debian" || "${ID}" == "ubuntu" || "${ID_LIKE:-}" == *"debian"* ]] \
+  || { printf "Debian/Ubuntu only.\n"; exit 1; }
+
+# ==============================================================================
+# Logging
+# ==============================================================================
+LOG="/var/log/server-$(basename "$0" .sh).log"
+mkdir -p "$(dirname "$LOG")"
+: > "$LOG"
+
+{
+  printf "============================================================\n"
+  printf " Script: %s\n" "$(basename "$0")"
+  printf " Started at: %s\n" "$(date '+%Y-%m-%d %H:%M:%S')"
+  printf " Hostname: %s\n" "$(hostname)"
+  printf "============================================================\n"
+} >> "$LOG"
+
+exec > >(tee -a "$LOG") 2> >(tee -a "$LOG" >&2)
+
+# ==============================================================================
+# Helpers
+# ==============================================================================
+info() { printf "\e[34m%s\e[0m\n" "$*"; }
+rept() { printf "\e[32m[✔] %s\e[0m\n" "$*"; }
+warn() { printf "\e[33m[!] %s\e[0m\n" "$*"; }
+die()  { printf "\e[31m[✖] %s\e[0m\n" "$*"; exit 1; }
+
+has_systemd() {
+  [[ -d /run/systemd/system ]] && command -v systemctl >/dev/null 2>&1
+}
+
+# ==============================================================================
+# Banner
+# ==============================================================================
+info "═══════════════════════════════════════════"
+info "✔ Backup Script Started"
+info "═══════════════════════════════════════════"
 
 ### CONFIGURATION ##############################################################
 
