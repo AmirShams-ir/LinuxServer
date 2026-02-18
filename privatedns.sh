@@ -77,10 +77,7 @@ info "Installing Unbound..."
 apt update -y
 apt install -y unbound dnsutils
 
-# ==============================================================================
-# Clean Old DNSSEC Anchor (Prevents Crash)
-# ==============================================================================
-rm -f /var/lib/unbound/root.key 2>/dev/null || true
+rm -f /etc/unbound/unbound.conf.d/root-auto-trust-anchor-file.conf 2>/dev/null || true
 
 # ==============================================================================
 # Write Config
