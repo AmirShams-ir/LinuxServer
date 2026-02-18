@@ -85,9 +85,8 @@ fi
 # Remove default DNSSEC anchor (forwarder mode)
 rm -f /etc/unbound/unbound.conf.d/root-auto-trust-anchor-file.conf 2>/dev/null || true
 
-
 # ==============================================================================
-# Write Optimized Config (Iran Optimized)
+# Write Optimized Config
 # ==============================================================================
 info "Writing optimized config..."
 
@@ -148,7 +147,6 @@ forward-zone:
     forward-addr: 9.9.9.9
     forward-addr: 149.112.112.112
 EOF
-
 
 # ==============================================================================
 # Validate Config
