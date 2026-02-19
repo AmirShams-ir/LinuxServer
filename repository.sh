@@ -110,9 +110,9 @@ EOF
 
   # --- IR Mirrors (Primary) ---
   cat > "$IR_LIST" <<EOF
-deb http://edge02.10.ir.cdn.ir/repository/debian $CODENAME $COMPONENTS
-deb http://edge02.10.ir.cdn.ir/repository/debian $CODENAME-updates $COMPONENTS
-deb http://edge02.10.ir.cdn.ir/repository/debian-security $CODENAME-security $COMPONENTS
+deb http://mirror.cdn.ir/repository/debian $CODENAME $COMPONENTS
+deb http://mirror.cdn.ir/repository/debian $CODENAME-updates $COMPONENTS
+deb http://mirror.cdn.ir/repository/debian-security $CODENAME-security $COMPONENTS
 
 deb http://repo.iut.ac.ir/debian $CODENAME $COMPONENTS
 deb http://repo.iut.ac.ir/debian $CODENAME-updates $COMPONENTS
