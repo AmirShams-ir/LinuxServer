@@ -114,22 +114,23 @@ EOF
 
   mkdir -p /etc/apt/preferences.d
 
-  cat > "$PIN_FILE" <<EOF
-Package: *
-Pin: origin deb.debian.org
-Pin-Priority: 900
-
-Package: *
-Pin: origin security.debian.org
-Pin-Priority: 900
-
+cat > "$PIN_FILE" <<EOF
 Package: *
 Pin: origin repo.iut.ac.ir
-Pin-Priority: 100
+Pin-Priority: 900
 
 Package: *
 Pin: origin mirror.arvancloud.ir
-Pin-Priority: 100
+Pin-Priority: 900
+
+
+Package: *
+Pin: origin deb.debian.org
+Pin-Priority: 500
+
+Package: *
+Pin: origin security.debian.org
+Pin-Priority: 990
 EOF
 
 # ==============================================================================
