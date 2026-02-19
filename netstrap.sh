@@ -78,7 +78,41 @@ read -rp "Enter domain (example.com): " DOMAIN
 
 WEBROOT="/var/www/$DOMAIN"
 
-rept "Input validated"
+info "Detecting server public IP..."
+
+# Try multiple reliable services
+PUBLIC_IP=$(curl -4 -s --max-time 5 https://ipv4.icanhazip.com 2>/dev/null || true)
+[[ -z "$PUBLIC_IP" ]] && PUBLIC_IP=$(curl -4 -s --max-time 5 https://api.ipify.org 2>/dev/null || true)
+[[ -z "$PUBLIC_IP" ]] && PUBLIC_IP=$(hostname -I | awk '{print $1}')
+
+[[ -z "$PUBLIC_IP" ]] && die "Could not detect public IP"
+
+info "Detected IP: $PUBLIC_IP"
+
+# Hostname setup
+HOSTNAME_SHORT="host"
+FQDN="${HOSTNAME_SHORT}.${DOMAIN}"
+
+info "Setting FQDN to $FQDN"
+
+hostnamectl set-hostname "$FQDN" || die "Failed to set hostname"
+
+# Update /etc/hosts safely
+if ! grep -q "$FQDN" /etc/hosts; then
+    sed -i "/127.0.1.1/d" /etc/hosts
+    echo "$PUBLIC_IP    $FQDN $HOSTNAME_SHORT" >> /etc/hosts
+fi
+
+# DNS check (optional warning only)
+RESOLVED_IP=$(getent hosts "$FQDN" | awk '{print $1}' | head -n1)
+
+if [[ "$RESOLVED_IP" != "$PUBLIC_IP" ]]; then
+    warn "Warning: DNS for $FQDN does not resolve to this server IP"
+else
+    info "DNS resolution looks correct"
+fi
+
+rept "FQDN successfully configured"
 
 # ==============================================================================
 # Base System Packages
