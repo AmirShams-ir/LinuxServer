@@ -68,8 +68,13 @@ info "✔ Repository Script Started"
 info "═══════════════════════════════════════════"
 
 # ==============================================================================
-# Variables
+# OS Detection
 # ==============================================================================
+source /etc/os-release || { echo "Cannot detect OS."; exit 1; }
+
+[[ "${ID}" == "debian" || "${ID}" == "ubuntu" || "${ID_LIKE:-}" == *"debian"* ]] \
+  || { echo "Debian/Ubuntu only."; exit 1; }
+
 OS_ID="$ID"
 OS_VER="$VERSION_ID"
 PRETTY="$PRETTY_NAME"
@@ -77,44 +82,43 @@ PRETTY="$PRETTY_NAME"
 MAIN_LIST="/etc/apt/sources.list"
 IR_LIST="/etc/apt/sources.list.d/ir-mirror.list"
 PIN_FILE="/etc/apt/preferences.d/99-apt-priority"
-
-[[ -f "$MAIN_LIST" ]] || die "sources.list not found"
+APT_CONF="/etc/apt/apt.conf.d/99-fast-retries"
 
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 cp -a "$MAIN_LIST" "${MAIN_LIST}.bak.${TIMESTAMP}"
 
-info "Detected OS: $PRETTY"
-rept "Backup created: ${MAIN_LIST}.bak.${TIMESTAMP}"
+echo "Detected OS: $PRETTY"
+echo "Backup created."
 
 # ==============================================================================
-# Debian Configuration
+# Debian
 # ==============================================================================
-info "Applying repository configuration..."
-
 if [[ "$OS_ID" == "debian" ]]; then
 
   case "$OS_VER" in
     11) CODENAME="bullseye"; COMPONENTS="main contrib non-free" ;;
     12) CODENAME="bookworm"; COMPONENTS="main contrib non-free non-free-firmware" ;;
-    *)  die "Unsupported Debian version: $OS_VER" ;;
+    *)  echo "Unsupported Debian version"; exit 1 ;;
   esac
 
+  # --- Official (Fallback) ---
   cat > "$MAIN_LIST" <<EOF
 deb https://deb.debian.org/debian $CODENAME $COMPONENTS
 deb https://deb.debian.org/debian $CODENAME-updates $COMPONENTS
 deb https://security.debian.org/debian-security ${CODENAME}-security $COMPONENTS
 EOF
 
+  # --- IR Mirrors (Primary) ---
   cat > "$IR_LIST" <<EOF
 deb http://repo.iut.ac.ir/debian $CODENAME $COMPONENTS
 deb http://repo.iut.ac.ir/debian $CODENAME-updates $COMPONENTS
 deb http://mirror.arvancloud.ir/debian $CODENAME $COMPONENTS
-deb http://mirror.arvancloud.ir/debian-security $CODENAME-security $COMPONENTS
+deb http://mirror.arvancloud.ir/debian-security ${CODENAME}-security $COMPONENTS
 EOF
 
+  # --- Pinning ---
   mkdir -p /etc/apt/preferences.d
-
-cat > "$PIN_FILE" <<EOF
+  cat > "$PIN_FILE" <<EOF
 Package: *
 Pin: origin repo.iut.ac.ir
 Pin-Priority: 900
@@ -122,7 +126,6 @@ Pin-Priority: 900
 Package: *
 Pin: origin mirror.arvancloud.ir
 Pin-Priority: 900
-
 
 Package: *
 Pin: origin deb.debian.org
@@ -134,83 +137,74 @@ Pin-Priority: 990
 EOF
 
 # ==============================================================================
-# Ubuntu Configuration
+# Ubuntu
 # ==============================================================================
 elif [[ "$OS_ID" == "ubuntu" ]]; then
 
   case "$OS_VER" in
     22.04) CODENAME="jammy" ;;
     24.04) CODENAME="noble" ;;
-    *) die "Unsupported Ubuntu version: $OS_VER" ;;
+    *) echo "Unsupported Ubuntu version"; exit 1 ;;
   esac
 
   cat > "$MAIN_LIST" <<EOF
 deb https://archive.ubuntu.com/ubuntu $CODENAME main restricted universe multiverse
 deb https://archive.ubuntu.com/ubuntu $CODENAME-updates main restricted universe multiverse
-deb https://archive.ubuntu.com/ubuntu $CODENAME-security main restricted universe multiverse
+deb https://security.ubuntu.com/ubuntu $CODENAME-security main restricted universe multiverse
 EOF
 
   cat > "$IR_LIST" <<EOF
 deb http://repo.iut.ac.ir/ubuntu $CODENAME main restricted universe multiverse
 deb http://repo.iut.ac.ir/ubuntu $CODENAME-updates main restricted universe multiverse
 deb http://repo.iut.ac.ir/ubuntu $CODENAME-security main restricted universe multiverse
-deb http://mirror.arvancloud.ir/ubuntu $CODENAME universe
+deb http://mirror.arvancloud.ir/ubuntu $CODENAME main restricted universe multiverse
 EOF
 
   mkdir -p /etc/apt/preferences.d
-
   cat > "$PIN_FILE" <<EOF
 Package: *
-Pin: origin archive.ubuntu.com
-Pin-Priority: 900
-
-Package: *
-Pin: origin security.ubuntu.com
-Pin-Priority: 900
-
-Package: *
 Pin: origin repo.iut.ac.ir
-Pin-Priority: 100
+Pin-Priority: 900
 
 Package: *
 Pin: origin mirror.arvancloud.ir
-Pin-Priority: 100
-EOF
+Pin-Priority: 900
 
-else
-  die "Unsupported OS: $OS_ID"
+Package: *
+Pin: origin archive.ubuntu.com
+Pin-Priority: 500
+
+Package: *
+Pin: origin security.ubuntu.com
+Pin-Priority: 990
+EOF
 fi
 
-rept "Repository configuration applied"
-rept "APT pinning rules applied"
+# ==============================================================================
+# Faster Failover Settings
+# ==============================================================================
+cat > "$APT_CONF" <<EOF
+Acquire::Retries "5";
+Acquire::http::Timeout "15";
+Acquire::https::Timeout "15";
+Acquire::Queue-Mode "access";
+EOF
 
 # ==============================================================================
-# Refresh & Update
+# Clean & Update
 # ==============================================================================
-info "Refreshing CA certificates..."
-
 apt-get clean
-apt-get install --reinstall -y ca-certificates >/dev/null
-update-ca-certificates >/dev/null
+apt-get update
 
-rept "CA certificates refreshed"
-
-info "Updating package index..."
-
-apt-get update || die "APT update failed"
-
-rept "APT update completed"
-
-info "APT verification (policy bash):"
-apt-cache policy bash | sed -n '1,15p'
+apt-cache policy bash | sed -n '1,12p'
 
 # ==============================================================================
 # Final Summary
 # ==============================================================================
 info "══════════════════════════════════════════════"
 rept "OS       : $PRETTY"
-rept "Primary  : Official repositories (US)"
-rept "Fallback : Mirror repositories (IR)"
+rept "Primary  : Mirror repositories (IR)"
+rept "Fallback : Official repositories (US)"
 info "══════════════════════════════════════════════"
 
 unset PRETTY OS_ID OS_VER MAIN_LIST IR_LIST PIN_FILE
