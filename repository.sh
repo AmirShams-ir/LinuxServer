@@ -139,6 +139,8 @@ Pin-Priority: 800
 Package: *
 Pin: origin deb.debian.org
 Pin-Priority: 400
+EOF
+fi
 
 # ==============================================================================
 # Ubuntu
