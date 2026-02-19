@@ -103,15 +103,20 @@ if [[ "$OS_ID" == "debian" ]]; then
 
   # --- Official (Fallback) ---
   cat > "$MAIN_LIST" <<EOF
-deb https://deb.debian.org/debian $CODENAME $COMPONENTS
-deb https://deb.debian.org/debian $CODENAME-updates $COMPONENTS
-deb https://security.debian.org/debian-security ${CODENAME}-security $COMPONENTS
+deb https://mirror.cdn.ir/debian $CODENAME $COMPONENTS
+deb https://mirror.cdn.ir/debian $CODENAME-updates $COMPONENTS
+deb https://mirror.cdn.ir/debian-security ${CODENAME}-security $COMPONENTS
 EOF
 
   # --- IR Mirrors (Primary) ---
   cat > "$IR_LIST" <<EOF
+deb https://deb.debian.org/debian $CODENAME $COMPONENTS
+deb https://deb.debian.org/debian $CODENAME-updates $COMPONENTS
+deb https://security.debian.org/debian-security ${CODENAME}-security $COMPONENTS
+
 deb http://repo.iut.ac.ir/debian $CODENAME $COMPONENTS
 deb http://repo.iut.ac.ir/debian $CODENAME-updates $COMPONENTS
+
 deb http://mirror.arvancloud.ir/debian $CODENAME $COMPONENTS
 deb http://mirror.arvancloud.ir/debian-security ${CODENAME}-security $COMPONENTS
 EOF
@@ -154,9 +159,14 @@ deb https://security.ubuntu.com/ubuntu $CODENAME-security main restricted univer
 EOF
 
   cat > "$IR_LIST" <<EOF
+deb https://mirror.cdn.ir/ubuntu $CODENAME main restricted universe multiverse
+deb https://mirror.cdn.ir/ubuntu $CODENAME-updates main restricted universe multiverse
+deb https://mirror.cdn.ir/ubuntu $CODENAME-security main restricted universe multiverse
+
 deb http://repo.iut.ac.ir/ubuntu $CODENAME main restricted universe multiverse
 deb http://repo.iut.ac.ir/ubuntu $CODENAME-updates main restricted universe multiverse
 deb http://repo.iut.ac.ir/ubuntu $CODENAME-security main restricted universe multiverse
+
 deb http://mirror.arvancloud.ir/ubuntu $CODENAME main restricted universe multiverse
 EOF
 
