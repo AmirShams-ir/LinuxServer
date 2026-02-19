@@ -129,11 +129,11 @@ Pin-Priority: 900
 
 Package: *
 Pin: origin deb.debian.org
-Pin-Priority: 500
+Pin-Priority: 400
 
 Package: *
 Pin: origin security.debian.org
-Pin-Priority: 990
+Pin-Priority: 400
 EOF
 
 # ==============================================================================
@@ -172,11 +172,11 @@ Pin-Priority: 900
 
 Package: *
 Pin: origin archive.ubuntu.com
-Pin-Priority: 500
+Pin-Priority: 400
 
 Package: *
 Pin: origin security.ubuntu.com
-Pin-Priority: 500
+Pin-Priority: 400
 EOF
 fi
 
