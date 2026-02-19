@@ -67,20 +67,85 @@ if has_systemd; then
 fi
 
 # ==============================================================================
-# User Input + FQDN
+# Enterprise FQDN Configuration (Production-Safe)
 # ==============================================================================
-read -rp "Enter domain (example.com): " DOMAIN
+
+info "Configuring FQDN..."
+
+# -----------------------------
+# Input
+# -----------------------------
+read -rp "Enter Subdomain (e.g. vps): " SUB
+read -rp "Enter Domain (example.com): " DOMAIN
+
+[[ "$SUB" =~ ^[a-zA-Z0-9-]+$ ]] || die "Invalid subdomain"
 [[ "$DOMAIN" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]] || die "Invalid domain"
 
-PUBLIC_IP=$(curl -4 -s --max-time 5 https://api.ipify.org || hostname -I | awk '{print $1}')
-[[ -z "$PUBLIC_IP" ]] && die "IP detection failed"
+FQDN="$SUB.$DOMAIN"
 
-FQDN="host.$DOMAIN"
-hostnamectl set-hostname "$FQDN"
-sed -i "/$FQDN/d" /etc/hosts
-echo "$PUBLIC_IP $FQDN host" >> /etc/hosts
+# -----------------------------
+# Detect Public IP (robust)
+# -----------------------------
+PUBLIC_IP=""
 
-ok "FQDN set: $FQDN ($PUBLIC_IP)"
+for service in \
+  "https://api.ipify.org" \
+  "https://ipv4.icanhazip.com" \
+  "https://ifconfig.me/ip"
+do
+  PUBLIC_IP=$(curl -4 -s --max-time 5 "$service" 2>/dev/null || true)
+  [[ "$PUBLIC_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] && break
+done
+
+[[ -z "$PUBLIC_IP" ]] && PUBLIC_IP=$(hostname -I | awk '{print $1}')
+[[ -z "$PUBLIC_IP" ]] && die "Public IP detection failed"
+
+info "Detected Public IP: $PUBLIC_IP"
+
+# -----------------------------
+# Set Hostname
+# -----------------------------
+hostnamectl set-hostname "$FQDN" || die "Failed to set hostname"
+
+# -----------------------------
+# Ensure localhost entry exists
+# -----------------------------
+grep -q "^127.0.0.1" /etc/hosts || echo "127.0.0.1 localhost" >> /etc/hosts
+
+# -----------------------------
+# Clean previous FQDN entry safely
+# -----------------------------
+sed -i "/[[:space:]]$FQDN\$/d" /etc/hosts
+
+# -----------------------------
+# Add correct mapping
+# -----------------------------
+echo "$PUBLIC_IP $FQDN $SUB" >> /etc/hosts
+
+ok "FQDN set to $FQDN"
+
+# -----------------------------
+# DNS Verification (Non-blocking)
+# -----------------------------
+RESOLVED_IP=$(getent hosts "$FQDN" | awk '{print $1}' | head -n1 || true)
+
+if [[ "$RESOLVED_IP" != "$PUBLIC_IP" ]]; then
+  warn "DNS A record for $FQDN does not yet resolve to $PUBLIC_IP"
+  warn "Set A record before issuing SSL."
+else
+  ok "DNS resolution verified"
+fi
+
+# -----------------------------
+# Reverse DNS Hint
+# -----------------------------
+PTR=$(dig +short -x "$PUBLIC_IP" 2>/dev/null || true)
+
+if [[ -z "$PTR" ]]; then
+  warn "Reverse DNS (PTR) not configured for $PUBLIC_IP"
+else
+  ok "Reverse DNS: $PTR"
+fi
 
 # ==============================================================================
 # Base Packages
