@@ -103,16 +103,16 @@ if [[ "$OS_ID" == "debian" ]]; then
 
   # --- Official (Fallback) ---
   cat > "$MAIN_LIST" <<EOF
-deb https://mirror.cdn.ir/debian $CODENAME $COMPONENTS
-deb https://mirror.cdn.ir/debian $CODENAME-updates $COMPONENTS
-deb https://mirror.cdn.ir/debian-security ${CODENAME}-security $COMPONENTS
+deb https://deb.debian.org $CODENAME $COMPONENTS
+deb https://deb.debian.org $CODENAME-updates $COMPONENTS
+deb https://deb.debian.org/debian-security ${CODENAME}-security $COMPONENTS
 EOF
 
   # --- IR Mirrors (Primary) ---
   cat > "$IR_LIST" <<EOF
-deb https://mirror.cdn.ir/repository/debian $CODENAME $COMPONENTS
-deb https://mirror.cdn.ir/repository/debian $CODENAME-updates $COMPONENTS
-deb https://mirror.cdn.ir/repository/debian-security ${CODENAME}-security $COMPONENTS
+deb https://edge02.10.ir.cdn.ir/repository/debian $CODENAME $COMPONENTS
+deb https://edge02.10.ir.cdn.ir/repository/debian $CODENAME-updates $COMPONENTS
+deb https://edge02.10.ir.cdn.ir/repository/debian-security ${CODENAME}-security $COMPONENTS
 
 deb http://repo.iut.ac.ir/debian $CODENAME $COMPONENTS
 deb http://repo.iut.ac.ir/debian $CODENAME-updates $COMPONENTS
@@ -124,6 +124,10 @@ EOF
   # --- Pinning ---
   mkdir -p /etc/apt/preferences.d
   cat > "$PIN_FILE" <<EOF
+Package: *
+Pin: edge02.10.ir.cdn.ir
+Pin-Priority: 900
+
 Package: *
 Pin: origin repo.iut.ac.ir
 Pin-Priority: 900
@@ -172,6 +176,10 @@ EOF
 
   mkdir -p /etc/apt/preferences.d
   cat > "$PIN_FILE" <<EOF
+Package: *
+Pin: origin mirror.cdn.ir
+Pin-Priority: 900
+
 Package: *
 Pin: origin repo.iut.ac.ir
 Pin-Priority: 900
