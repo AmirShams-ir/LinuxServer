@@ -81,8 +81,8 @@ PRETTY="$PRETTY_NAME"
 
 MAIN_LIST="/etc/apt/sources.list"
 IR_LIST="/etc/apt/sources.list.d/ir-mirror.list"
-PIN_FILE="/etc/apt/preferences.d/99-apt-priority"
-APT_CONF="/etc/apt/apt.conf.d/99-fast-retries"
+PIN_FILE="/etc/apt/preferences.d/apt-priority"
+APT_CONF="/etc/apt/apt.conf.d/fast-retries"
 
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 cp -a "$MAIN_LIST" "${MAIN_LIST}.bak.${TIMESTAMP}"
@@ -105,20 +105,20 @@ if [[ "$OS_ID" == "debian" ]]; then
   cat > "$MAIN_LIST" <<EOF
 deb http://deb.debian.org/debian $CODENAME $COMPONENTS
 deb http://deb.debian.org/debian $CODENAME-updates $COMPONENTS
-deb http://deb.debian.org/debian-security ${CODENAME}-security $COMPONENTS
+deb http://deb.debian.org/debian-security $CODENAME-security $COMPONENTS
 EOF
 
   # --- IR Mirrors (Primary) ---
   cat > "$IR_LIST" <<EOF
 deb https://edge02.10.ir.cdn.ir/repository/debian $CODENAME $COMPONENTS
 deb https://edge02.10.ir.cdn.ir/repository/debian $CODENAME-updates $COMPONENTS
-deb https://edge02.10.ir.cdn.ir/repository/debian-security ${CODENAME}-security $COMPONENTS
+deb https://edge02.10.ir.cdn.ir/repository/debian-security $CODENAME-security $COMPONENTS
 
 deb http://repo.iut.ac.ir/debian $CODENAME $COMPONENTS
 deb http://repo.iut.ac.ir/debian $CODENAME-updates $COMPONENTS
 
 deb http://mirror.arvancloud.ir/debian $CODENAME $COMPONENTS
-deb http://mirror.arvancloud.ir/debian-security ${CODENAME}-security $COMPONENTS
+deb http://mirror.arvancloud.ir/debian-security $CODENAME-security $COMPONENTS
 EOF
 
   # --- Pinning ---
