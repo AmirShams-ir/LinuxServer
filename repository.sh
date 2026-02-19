@@ -96,23 +96,23 @@ echo "Backup created."
 if [[ "$OS_ID" == "debian" ]]; then
 
   case "$OS_VER" in
-    11) CODENAME="bullseye"; COMPONENTS="main contrib non-free" ;;
     12) CODENAME="bookworm"; COMPONENTS="main contrib non-free non-free-firmware" ;;
+    13) CODENAME="trixie"; COMPONENTS="main contrib non-free non-free-firmware" ;;
     *)  echo "Unsupported Debian version"; exit 1 ;;
   esac
 
   # --- Official (Fallback) ---
   cat > "$MAIN_LIST" <<EOF
-deb http://deb.debian.org/debian $CODENAME $COMPONENTS
-deb http://deb.debian.org/debian $CODENAME-updates $COMPONENTS
-deb http://deb.debian.org/debian-security $CODENAME-security $COMPONENTS
+deb https://deb.debian.org/debian $CODENAME $COMPONENTS
+deb https://deb.debian.org/debian $CODENAME-updates $COMPONENTS
+deb https://deb.debian.org/debian-security $CODENAME-security $COMPONENTS
 EOF
 
   # --- IR Mirrors (Primary) ---
   cat > "$IR_LIST" <<EOF
-deb https://edge02.10.ir.cdn.ir/repository/debian $CODENAME $COMPONENTS
-deb https://edge02.10.ir.cdn.ir/repository/debian $CODENAME-updates $COMPONENTS
-deb https://edge02.10.ir.cdn.ir/repository/debian-security $CODENAME-security $COMPONENTS
+deb http://edge02.10.ir.cdn.ir/repository/debian $CODENAME $COMPONENTS
+deb http://edge02.10.ir.cdn.ir/repository/debian $CODENAME-updates $COMPONENTS
+deb http://edge02.10.ir.cdn.ir/repository/debian-security $CODENAME-security $COMPONENTS
 
 deb http://repo.iut.ac.ir/debian $CODENAME $COMPONENTS
 deb http://repo.iut.ac.ir/debian $CODENAME-updates $COMPONENTS
@@ -125,25 +125,20 @@ EOF
   mkdir -p /etc/apt/preferences.d
   cat > "$PIN_FILE" <<EOF
 Package: *
-Pin: edge02.10.ir.cdn.ir
+Pin: origin edge02.10.ir.cdn.ir
 Pin-Priority: 900
 
 Package: *
 Pin: origin repo.iut.ac.ir
-Pin-Priority: 900
+Pin-Priority: 850
 
 Package: *
 Pin: origin mirror.arvancloud.ir
-Pin-Priority: 900
+Pin-Priority: 800
 
 Package: *
 Pin: origin deb.debian.org
 Pin-Priority: 400
-
-Package: *
-Pin: origin security.debian.org
-Pin-Priority: 400
-EOF
 
 # ==============================================================================
 # Ubuntu
@@ -163,9 +158,9 @@ deb https://security.ubuntu.com/ubuntu $CODENAME-security main restricted univer
 EOF
 
   cat > "$IR_LIST" <<EOF
-deb https://mirror.cdn.ir/ubuntu $CODENAME main restricted universe multiverse
-deb https://mirror.cdn.ir/ubuntu $CODENAME-updates main restricted universe multiverse
-deb https://mirror.cdn.ir/ubuntu $CODENAME-security main restricted universe multiverse
+deb http://mirror.cdn.ir/ubuntu $CODENAME main restricted universe multiverse
+deb http://mirror.cdn.ir/ubuntu $CODENAME-updates main restricted universe multiverse
+deb http://mirror.cdn.ir/ubuntu $CODENAME-security main restricted universe multiverse
 
 deb http://repo.iut.ac.ir/ubuntu $CODENAME main restricted universe multiverse
 deb http://repo.iut.ac.ir/ubuntu $CODENAME-updates main restricted universe multiverse
@@ -182,11 +177,11 @@ Pin-Priority: 900
 
 Package: *
 Pin: origin repo.iut.ac.ir
-Pin-Priority: 900
+Pin-Priority: 850
 
 Package: *
 Pin: origin mirror.arvancloud.ir
-Pin-Priority: 900
+Pin-Priority: 800
 
 Package: *
 Pin: origin archive.ubuntu.com
@@ -199,13 +194,15 @@ EOF
 fi
 
 # ==============================================================================
-# Faster Failover Settings
+# Failover Speed Tuning
 # ==============================================================================
 cat > "$APT_CONF" <<EOF
 Acquire::Retries "5";
 Acquire::http::Timeout "15";
 Acquire::https::Timeout "15";
 Acquire::Queue-Mode "access";
+APT::Install-Recommends "false";
+APT::Install-Suggests "false";
 EOF
 
 # ==============================================================================
