@@ -103,9 +103,9 @@ if [[ "$OS_ID" == "debian" ]]; then
 
   # --- Official (Fallback) ---
   cat > "$MAIN_LIST" <<EOF
-deb https://deb.debian.org $CODENAME $COMPONENTS
-deb https://deb.debian.org $CODENAME-updates $COMPONENTS
-deb https://deb.debian.org/debian-security ${CODENAME}-security $COMPONENTS
+deb http://deb.debian.org/debian $CODENAME $COMPONENTS
+deb http://deb.debian.org/debian $CODENAME-updates $COMPONENTS
+deb http://deb.debian.org/debian-security ${CODENAME}-security $COMPONENTS
 EOF
 
   # --- IR Mirrors (Primary) ---
