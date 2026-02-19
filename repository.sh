@@ -80,9 +80,9 @@ OS_VER="$VERSION_ID"
 PRETTY="$PRETTY_NAME"
 
 MAIN_LIST="/etc/apt/sources.list"
-IR_LIST="/etc/apt/sources.list.d/ir-mirror.list"
-PIN_FILE="/etc/apt/preferences.d/apt-priority"
-APT_CONF="/etc/apt/apt.conf.d/fast-retries"
+IR_LIST="/etc/apt/sources.list.d/ir-mirrors.list"
+PIN_FILE="/etc/apt/preferences.d/99-mirror-priority"
+APT_CONF="/etc/apt/apt.conf.d/99-fast-retries"
 
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 cp -a "$MAIN_LIST" "${MAIN_LIST}.bak.${TIMESTAMP}"
