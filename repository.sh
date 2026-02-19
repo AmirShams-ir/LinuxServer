@@ -117,7 +117,7 @@ EOF
 # ==============================================================================
 mkdir -p /etc/apt/preferences.d
 
-cat > /etc/apt/preferences.d/99-bulletproof <<EOF
+cat > /etc/apt/preferences.d/priority <<EOF
 Package: *
 Pin: origin repo.iut.ac.ir
 Pin-Priority: 900
