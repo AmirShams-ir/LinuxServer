@@ -68,56 +68,57 @@ info "✔ Repository Script Started"
 info "═══════════════════════════════════════════"
 
 # ==============================================================================
-# Root Check
+# OS Detection
 # ==============================================================================
-[[ $EUID -eq 0 ]] || { echo "Run as root."; exit 1; }
+source /etc/os-release || { echo "Cannot detect OS."; exit 1; }
 
-source /etc/os-release || { echo "OS detection failed."; exit 1; }
+[[ "${ID}" == "debian" || "${ID}" == "ubuntu" || "${ID_LIKE:-}" == *"debian"* ]] \
+  || { echo "Debian/Ubuntu only."; exit 1; }
 
-[[ "$ID" == "debian" ]] || { echo "Debian only."; exit 1; }
+OS_ID="$ID"
+OS_VER="$VERSION_ID"
+PRETTY="$PRETTY_NAME"
 
-case "$VERSION_ID" in
-  11) CODENAME="bullseye"; COMPONENTS="main contrib non-free" ;;
-  12) CODENAME="bookworm"; COMPONENTS="main contrib non-free non-free-firmware" ;;
-  *) echo "Unsupported Debian version"; exit 1 ;;
-esac
+MAIN_LIST="/etc/apt/sources.list"
+IR_LIST="/etc/apt/sources.list.d/ir-mirror.list"
+PIN_FILE="/etc/apt/preferences.d/99-apt-priority"
+APT_CONF="/etc/apt/apt.conf.d/99-fast-retries"
 
-echo "Detected: $PRETTY_NAME"
+TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
+cp -a "$MAIN_LIST" "${MAIN_LIST}.bak.${TIMESTAMP}"
+
+echo "Detected OS: $PRETTY"
+echo "Backup created."
 
 # ==============================================================================
-# Backup
+# Debian
 # ==============================================================================
-TS=$(date +%Y%m%d-%H%M%S)
-cp -a /etc/apt/sources.list /etc/apt/sources.list.bak.$TS
+if [[ "$OS_ID" == "debian" ]]; then
 
-# ==============================================================================
-# Official (Fallback Only)
-# ==============================================================================
-cat > /etc/apt/sources.list <<EOF
+  case "$OS_VER" in
+    11) CODENAME="bullseye"; COMPONENTS="main contrib non-free" ;;
+    12) CODENAME="bookworm"; COMPONENTS="main contrib non-free non-free-firmware" ;;
+    *)  echo "Unsupported Debian version"; exit 1 ;;
+  esac
+
+  # --- Official (Fallback) ---
+  cat > "$MAIN_LIST" <<EOF
 deb https://deb.debian.org/debian $CODENAME $COMPONENTS
 deb https://deb.debian.org/debian $CODENAME-updates $COMPONENTS
-deb https://deb.debian.org/debian-security ${CODENAME}-security $COMPONENTS
+deb https://security.debian.org/debian-security ${CODENAME}-security $COMPONENTS
 EOF
 
-# ==============================================================================
-# IR Mirrors (Primary including security)
-# ==============================================================================
-cat > /etc/apt/sources.list.d/ir-primary.list <<EOF
+  # --- IR Mirrors (Primary) ---
+  cat > "$IR_LIST" <<EOF
 deb http://repo.iut.ac.ir/debian $CODENAME $COMPONENTS
 deb http://repo.iut.ac.ir/debian $CODENAME-updates $COMPONENTS
-deb http://repo.iut.ac.ir/debian-security ${CODENAME}-security $COMPONENTS
-
 deb http://mirror.arvancloud.ir/debian $CODENAME $COMPONENTS
-deb http://mirror.arvancloud.ir/debian-updates $CODENAME-updates $COMPONENTS
 deb http://mirror.arvancloud.ir/debian-security ${CODENAME}-security $COMPONENTS
 EOF
 
-# ==============================================================================
-# Pinning (NO 990 to avoid skew)
-# ==============================================================================
-mkdir -p /etc/apt/preferences.d
-
-cat > /etc/apt/preferences.d/priority <<EOF
+  # --- Pinning ---
+  mkdir -p /etc/apt/preferences.d
+  cat > "$PIN_FILE" <<EOF
 Package: *
 Pin: origin repo.iut.ac.ir
 Pin-Priority: 900
@@ -128,47 +129,66 @@ Pin-Priority: 900
 
 Package: *
 Pin: origin deb.debian.org
-Pin-Priority: 400
+Pin-Priority: 500
+
+Package: *
+Pin: origin security.debian.org
+Pin-Priority: 990
 EOF
 
 # ==============================================================================
-# Fast Failover Config
+# Ubuntu
 # ==============================================================================
-cat > /etc/apt/apt.conf.d/99-fast <<EOF
+elif [[ "$OS_ID" == "ubuntu" ]]; then
+
+  case "$OS_VER" in
+    22.04) CODENAME="jammy" ;;
+    24.04) CODENAME="noble" ;;
+    *) echo "Unsupported Ubuntu version"; exit 1 ;;
+  esac
+
+  cat > "$MAIN_LIST" <<EOF
+deb https://archive.ubuntu.com/ubuntu $CODENAME main restricted universe multiverse
+deb https://archive.ubuntu.com/ubuntu $CODENAME-updates main restricted universe multiverse
+deb https://security.ubuntu.com/ubuntu $CODENAME-security main restricted universe multiverse
+EOF
+
+  cat > "$IR_LIST" <<EOF
+deb http://repo.iut.ac.ir/ubuntu $CODENAME main restricted universe multiverse
+deb http://repo.iut.ac.ir/ubuntu $CODENAME-updates main restricted universe multiverse
+deb http://repo.iut.ac.ir/ubuntu $CODENAME-security main restricted universe multiverse
+deb http://mirror.arvancloud.ir/ubuntu $CODENAME main restricted universe multiverse
+EOF
+
+  mkdir -p /etc/apt/preferences.d
+  cat > "$PIN_FILE" <<EOF
+Package: *
+Pin: origin repo.iut.ac.ir
+Pin-Priority: 900
+
+Package: *
+Pin: origin mirror.arvancloud.ir
+Pin-Priority: 900
+
+Package: *
+Pin: origin archive.ubuntu.com
+Pin-Priority: 500
+
+Package: *
+Pin: origin security.ubuntu.com
+Pin-Priority: 500
+EOF
+fi
+
+# ==============================================================================
+# Faster Failover Settings
+# ==============================================================================
+cat > "$APT_CONF" <<EOF
 Acquire::Retries "5";
 Acquire::http::Timeout "15";
 Acquire::https::Timeout "15";
 Acquire::Queue-Mode "access";
-APT::Install-Recommends "false";
-APT::Install-Suggests "false";
 EOF
-
-# ==============================================================================
-# Clean Broken State
-# ==============================================================================
-info "Cleaning APT state..."
-
-apt-get clean
-apt-mark unhold $(apt-mark showhold 2>/dev/null) 2>/dev/null || true
-
-dpkg --configure -a || true
-apt --fix-broken install -y || true
-
-# ==============================================================================
-# Update & Upgrade Safely
-# ==============================================================================
-info "Updating package index..."
-apt-get update
-
-echo "Running full upgrade..."
-apt-get -o Dpkg::Options::="--force-confnew" full-upgrade -y
-
-# ==============================================================================
-# Verification
-# ==============================================================================
-info "========== VERIFY =========="
-apt-cache policy bash | sed -n '1,15p'
-info "============================"
 
 # ==============================================================================
 # Clean & Update
