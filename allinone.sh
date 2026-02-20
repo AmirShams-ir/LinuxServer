@@ -136,8 +136,8 @@ apt update -y && apt upgrade -y
 
 apt install -y \
 curl gnupg ca-certificates \
-apt-transport-https unzip tar \
-ufw fail2ban rsync jq unattended-upgrades
+apt-transport-https zip unzip tar \
+ufw fail2ban rsync jq unattended-upgrades default-mysql-client
 
 ok "Base packages installed"
 
@@ -169,15 +169,16 @@ fi
 # ==============================================================================
 info "Applying Ultra Kernel Tuning..."
 
-rm -f /etc/sysctl.d/99-*.conf
+SYSCTL_FILE="/etc/sysctl.d/99-ultra-hosting.conf"
 
 RAM_MB=$(free -m | awk '/Mem:/ {print $2}')
 CONNTRACK=262144
 [[ "$RAM_MB" -lt 1500 ]] && CONNTRACK=131072
 
+modprobe nf_conntrack 2>/dev/null || true
 modprobe tcp_bbr 2>/dev/null || true
 
-cat > /etc/sysctl.d/99-ultra-hosting.conf <<EOF
+cat > "$SYSCTL_FILE" <<EOF
 fs.file-max=500000
 vm.swappiness=10
 vm.dirty_ratio=15
@@ -194,16 +195,11 @@ net.core.wmem_max=16777216
 net.ipv4.tcp_rmem=4096 87380 16777216
 net.ipv4.tcp_wmem=4096 65536 16777216
 
-net.core.somaxconn=65535
+net.core.somaxconn=32768
 net.ipv4.tcp_max_syn_backlog=8192
 net.ipv4.tcp_syncookies=1
 net.ipv4.tcp_fin_timeout=15
-net.ipv4.tcp_tw_reuse=1
 net.ipv4.ip_local_port_range=1024 65000
-
-net.netfilter.nf_conntrack_max=$CONNTRACK
-net.netfilter.nf_conntrack_tcp_timeout_established=600
-net.netfilter.nf_conntrack_tcp_timeout_time_wait=30
 
 net.ipv4.conf.all.accept_redirects=0
 net.ipv4.conf.default.accept_redirects=0
@@ -212,6 +208,15 @@ net.ipv4.conf.all.rp_filter=1
 net.ipv4.icmp_echo_ignore_broadcasts=1
 EOF
 
+# Apply conntrack only if available
+if [[ -d /proc/sys/net/netfilter ]]; then
+  sysctl -w net.netfilter.nf_conntrack_max=$CONNTRACK 2>/dev/null || true
+  sysctl -w net.netfilter.nf_conntrack_tcp_timeout_established=600 2>/dev/null || true
+  sysctl -w net.netfilter.nf_conntrack_tcp_timeout_time_wait=30 2>/dev/null || true
+fi
+
+sysctl --system >/dev/null
+
 cat > /etc/security/limits.d/99-hosting.conf <<EOF
 * soft nofile 500000
 * hard nofile 500000
@@ -219,8 +224,7 @@ root soft nofile 500000
 root hard nofile 500000
 EOF
 
-sysctl --system >/dev/null
-ok "Kernel tuned (Conntrack=$CONNTRACK)"
+ok "Kernel tuned safely (Conntrack=$CONNTRACK)"
 
 # ==============================================================================
 # Install CloudPanel
