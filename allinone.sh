@@ -72,9 +72,6 @@ fi
 
 info "Configuring FQDN..."
 
-# -----------------------------
-# Input
-# -----------------------------
 read -rp "Enter Subdomain (e.g. vps): " SUB
 read -rp "Enter Domain (example.com): " DOMAIN
 
@@ -82,12 +79,10 @@ read -rp "Enter Domain (example.com): " DOMAIN
 [[ "$DOMAIN" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]] || die "Invalid domain"
 
 FQDN="$SUB.$DOMAIN"
+SHORT_HOST="${FQDN%%.*}"
 
-# -----------------------------
-# Detect Public IP (robust)
-# -----------------------------
+# Detect IP
 PUBLIC_IP=""
-
 for service in \
   "https://api.ipify.org" \
   "https://ipv4.icanhazip.com" \
@@ -102,50 +97,37 @@ done
 
 info "Detected Public IP: $PUBLIC_IP"
 
-# -----------------------------
-# Set Hostname
-# -----------------------------
+CURRENT_HOST=$(hostname)
+if [[ "$CURRENT_HOST" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  warn "Numeric hostname detected, replacing with FQDN..."
+fi
+
 hostnamectl set-hostname "$FQDN" || die "Failed to set hostname"
 
-# -----------------------------
-# Ensure localhost entry exists
-# -----------------------------
+# Ensure localhost
 grep -q "^127.0.0.1" /etc/hosts || echo "127.0.0.1 localhost" >> /etc/hosts
 
-# -----------------------------
-# Clean previous FQDN entry safely
-# -----------------------------
-sed -i "/[[:space:]]$FQDN\$/d" /etc/hosts
+# Remove old entry safely
+grep -v -w "$FQDN" /etc/hosts > /etc/hosts.tmp && mv /etc/hosts.tmp /etc/hosts
 
-# -----------------------------
-# Add correct mapping
-# -----------------------------
-echo "$PUBLIC_IP $FQDN $SUB" >> /etc/hosts
+# Add mapping
+echo "$PUBLIC_IP $FQDN $SHORT_HOST" >> /etc/hosts
 
 ok "FQDN set to $FQDN"
 
-# -----------------------------
-# DNS Verification (Non-blocking)
-# -----------------------------
+# DNS check
 RESOLVED_IP=$(getent hosts "$FQDN" | awk '{print $1}' | head -n1 || true)
+[[ "$RESOLVED_IP" != "$PUBLIC_IP" ]] && warn "DNS A record not yet resolving"
 
-if [[ "$RESOLVED_IP" != "$PUBLIC_IP" ]]; then
-  warn "DNS A record for $FQDN does not yet resolve to $PUBLIC_IP"
-  warn "Set A record before issuing SSL."
-else
-  ok "DNS resolution verified"
-fi
-
-# -----------------------------
-# Reverse DNS Hint
-# -----------------------------
+# Reverse DNS check
 PTR=$(dig +short -x "$PUBLIC_IP" 2>/dev/null || true)
+[[ -z "$PTR" ]] && warn "PTR record not configured"
 
-if [[ -z "$PTR" ]]; then
-  warn "Reverse DNS (PTR) not configured for $PUBLIC_IP"
-else
-  ok "Reverse DNS: $PTR"
-fi
+# Preseed postfix (important before apt)
+echo "postfix postfix/mailname string $DOMAIN" | debconf-set-selections
+echo "postfix postfix/main_mailer_type string 'Internet Site'" | debconf-set-selections
+
+ok "FQDN Configuration Set"
 
 # ==============================================================================
 # Base Packages
@@ -227,15 +209,15 @@ net.ipv4.conf.all.rp_filter=1
 net.ipv4.icmp_echo_ignore_broadcasts=1
 EOF
 
-sysctl --system >/dev/null
-ok "Kernel tuned (Conntrack=$CONNTRACK)"
-
 cat > /etc/security/limits.d/99-hosting.conf <<EOF
 * soft nofile 500000
 * hard nofile 500000
 root soft nofile 500000
 root hard nofile 500000
 EOF
+
+sysctl --system >/dev/null
+ok "Kernel tuned (Conntrack=$CONNTRACK)"
 
 # ==============================================================================
 # Firewall
