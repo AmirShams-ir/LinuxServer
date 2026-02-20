@@ -317,54 +317,41 @@ info "Installing and configuring Fail2Ban..."
 apt-get update -y || die "APT update failed"
 apt-get install -y fail2ban apache2-utils || die "Fail2Ban installation failed"
 
-mkdir -p /etc/fail2ban/filter.d
+mkdir -p /etc/fail2ban
 
-# phpMyAdmin filter
-cat > /etc/fail2ban/filter.d/phpmyadmin.conf <<'EOF'
-[Definition]
-failregex = ^<HOST> -.*"(POST).*/index\.php.*" (200|302)
-ignoreregex =
-EOF
-
-# Jail Configuration
 cat > /etc/fail2ban/jail.local <<'EOF'
+# Default Settings
 [DEFAULT]
 bantime  = 1h
 findtime = 10m
-maxretry = 4
+maxretry = 5
 backend  = systemd
 usedns   = warn
 banaction = iptables-multiport
-destemail = root@localhost
-sendername = Fail2Ban
-action = %(action_)s
 
 # SSH Protection
 [sshd]
-enabled = true
-port    = 22
-logpath = /var/log/auth.log
+enabled  = true
+port     = 22
+logpath  = /var/log/auth.log
+maxretry = 5
 
-# Nginx Basic Auth
+# CloudPanel Nginx Protection
+[nginx-badbots]
+enabled  = true
+port     = http,https
+logpath  = /home/*/logs/nginx/*access.log
+maxretry = 5
+
 [nginx-http-auth]
 enabled  = true
 port     = http,https
-filter   = nginx-http-auth
-logpath  = /var/log/nginx/error.log
-maxretry = 5
-
-# phpMyAdmin Login Protection
-[phpmyadmin]
-enabled  = true
-port     = http,https
-filter   = phpmyadmin
-logpath  = /var/log/nginx/access.log
+logpath  = /home/*/logs/nginx/*error.log
 maxretry = 5
 EOF
 
 systemctl enable fail2ban
 systemctl restart fail2ban || die "Fail2Ban failed to start"
-
 sleep 2
 fail2ban-client status
 
