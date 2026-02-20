@@ -84,7 +84,7 @@ ok "FQDN set to $FQDN ($PUBLIC_IP)"
 # ========================= Base Packages =========================
 apt update -y && apt upgrade -y
 apt install -y curl gnupg ca-certificates apt-transport-https \
-zip unzip tar rsync jq unattended-upgrades default-mysql-client ufw fail2ban
+zip unzip tar rsync jq unattended-upgrades default-mysql-client 
 ok "Base packages installed"
 
 # ========================= Smart Port Check =========================
@@ -192,9 +192,6 @@ ufw --force enable
 ok "Firewall enabled"
 
 # ========================= Fail2Ban =========================
-# ==============================================================================
-# Fail2Ban
-# ==============================================================================
 info "Installing and configuring Fail2Ban..."
 
 apt-get update -y || die "APT update failed"
