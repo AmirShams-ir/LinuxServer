@@ -192,9 +192,53 @@ ufw --force enable
 ok "Firewall enabled"
 
 # ========================= Fail2Ban =========================
+# ==============================================================================
+# Fail2Ban
+# ==============================================================================
+info "Installing and configuring Fail2Ban..."
+
+apt-get update -y || die "APT update failed"
+apt-get install -y fail2ban apache2-utils || die "Fail2Ban installation failed"
+
+mkdir -p /etc/fail2ban
+
+cat > /etc/fail2ban/jail.local <<'EOF'
+# Default Settings
+[DEFAULT]
+bantime  = 1h
+findtime = 10m
+maxretry = 5
+backend  = systemd
+usedns   = warn
+banaction = iptables-multiport
+
+# SSH Protection
+[sshd]
+enabled  = true
+port     = 22
+logpath  = /var/log/auth.log
+maxretry = 5
+
+# CloudPanel Nginx Protection
+[nginx-badbots]
+enabled  = true
+port     = http,https
+logpath  = /home/*/logs/nginx/*access.log
+maxretry = 5
+
+[nginx-http-auth]
+enabled  = true
+port     = http,https
+logpath  = /home/*/logs/nginx/*error.log
+maxretry = 5
+EOF
+
 systemctl enable fail2ban
-systemctl restart fail2ban
-ok "Fail2Ban active"
+systemctl restart fail2ban || die "Fail2Ban failed to start"
+sleep 2
+fail2ban-client status
+
+ok "Fail2Ban fully hardened and active"
 
 # ========================= Final =========================
 IP=$(hostname -I | awk '{print $1}')
