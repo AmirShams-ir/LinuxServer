@@ -83,8 +83,8 @@ ok "FQDN set to $FQDN ($PUBLIC_IP)"
 
 # ========================= Base Packages =========================
 apt update -y && apt upgrade -y
-apt install -y curl gnupg ca-certificates apt-transport-https \
-zip unzip tar rsync jq unattended-upgrades default-mysql-client 
+apt -y install curl wget sudo unattended-upgrades default-mysql-client
+
 ok "Base packages installed"
 
 # ========================= Smart Port Check =========================
@@ -110,11 +110,10 @@ fi
 
 # ========================= Install CloudPanel =========================
 info "Installing CloudPanel..."
-curl -fsSL https://installer.cloudpanel.io/ce/v2/install.sh -o /tmp/clp.sh
-bash /tmp/clp.sh || die "CloudPanel install failed"
-rm -f /tmp/clp.sh
-sleep 5
-systemctl is-active --quiet clp-agent || die "CloudPanel service failed"
+curl -sS https://installer.cloudpanel.io/ce/v2/install.sh -o install.sh; \
+echo "19cfa702e7936a79e47812ff57d9859175ea902c62a68b2c15ccd1ebaf36caeb install.sh" | \
+sha256sum -c && DB_ENGINE=MARIADB_10.11 bash install.sh
+
 ok "CloudPanel installed"
 
 # ========================= Kernel Tuning =========================
