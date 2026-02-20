@@ -133,10 +133,11 @@ ok "FQDN Configuration Set"
 # Base Packages
 # ==============================================================================
 apt update -y && apt upgrade -y
-apt install -y curl wget gnupg ca-certificates lsb-release \
-apt-transport-https unzip tar sudo nano vim htop net-tools \
-dnsutils jq ufw fail2ban cron rsync logrotate git zip \
-build-essential unattended-upgrades
+
+apt install -y \
+curl gnupg ca-certificates \
+apt-transport-https unzip tar \
+ufw fail2ban rsync jq unattended-upgrades
 
 ok "Base packages installed"
 
@@ -146,6 +147,8 @@ ok "Base packages installed"
 for p in 80 443 8443 3306; do
   ss -lnt | grep -q ":$p " && die "Port $p in use. Clean VPS required."
 done
+
+ok "Ports Checked and Free"
 
 # ==============================================================================
 # Swap (Adaptive)
@@ -220,19 +223,6 @@ sysctl --system >/dev/null
 ok "Kernel tuned (Conntrack=$CONNTRACK)"
 
 # ==============================================================================
-# Firewall
-# ==============================================================================
-ufw --force reset
-ufw default deny incoming
-ufw default allow outgoing
-ufw allow 22
-ufw allow 80
-ufw allow 443
-ufw allow 8443
-ufw --force enable
-ok "Firewall enabled"
-
-# ==============================================================================
 # Install CloudPanel
 # ==============================================================================
 info "Installing CloudPanel..."
@@ -295,11 +285,86 @@ done
 ok "OPcache enabled"
 
 # ==============================================================================
+# Firewall (UFW)
+# ==============================================================================
+info "Installing and configuring UFW..."
+
+apt-get update || die "APT update failed"
+apt-get install -y ufw || die "UFW installation failed"
+
+ufw --force reset
+ufw default deny incoming
+ufw default allow outgoing
+
+ufw allow 22/tcp comment 'SSH'
+ufw allow 80/tcp comment 'HTTP'
+ufw allow 443/tcp comment 'HTTPS'
+ufw allow 8443/tcp comment 'CLOUDPANEL'
+
+ufw --force enable
+
+ok "Firewall installed and configured and enabled"
+
+# ==============================================================================
 # Fail2Ban
 # ==============================================================================
+info "Installing and configuring Fail2Ban..."
+
+apt-get update -y
+apt-get install -y fail2ban apache2-utils || die "Fail2Ban installation failed"
+
+mkdir -p /etc/fail2ban/filter.d
+
+# phpMyAdmin filter
+cat > /etc/fail2ban/filter.d/phpmyadmin.conf <<'EOF'
+[Definition]
+failregex = ^<HOST> -.*"(POST).*/index\.php.*" (200|302)
+ignoreregex =
+EOF
+
+# Jail Configuration
+cat > /etc/fail2ban/jail.local <<'EOF'
+[DEFAULT]
+bantime  = 1h
+findtime = 10m
+maxretry = 4
+backend  = systemd
+usedns   = warn
+banaction = iptables-multiport
+destemail = root@localhost
+sendername = Fail2Ban
+action = %(action_)s
+
+# SSH Protection
+[sshd]
+enabled = true
+port    = 22
+logpath = /var/log/auth.log
+
+# Nginx Basic Auth
+[nginx-http-auth]
+enabled  = true
+port     = http,https
+filter   = nginx-http-auth
+logpath  = /var/log/nginx/error.log
+maxretry = 5
+
+# phpMyAdmin Login Protection
+[phpmyadmin]
+enabled  = true
+port     = http,https
+filter   = phpmyadmin
+logpath  = /var/log/nginx/access.log
+maxretry = 5
+EOF
+
 systemctl enable fail2ban
-systemctl restart fail2ban
-ok "Fail2Ban active"
+systemctl restart fail2ban || die "Fail2Ban failed to start"
+
+sleep 2
+fail2ban-client status
+
+ok "Fail2Ban fully hardened and active"
 
 # ==============================================================================
 # Final
@@ -307,9 +372,9 @@ ok "Fail2Ban active"
 IP=$(hostname -I | awk '{print $1}')
 
 echo
-info "====================================================="
+info "═══════════════════════════════════════════"
 ok " CloudPanel Ultra Hosting Ready"
 ok " Access: https://$IP:8443"
 ok " FQDN  : $FQDN"
 ok " Reboot recommended now"
-info "====================================================="
+info "═══════════════════════════════════════════"
