@@ -137,7 +137,7 @@ apt update -y && apt upgrade -y
 apt install -y \
 curl gnupg ca-certificates \
 apt-transport-https zip unzip tar \
-ufw fail2ban rsync jq unattended-upgrades default-mysql-client
+rsync jq unattended-upgrades default-mysql-client
 
 ok "Base packages installed"
 
@@ -314,7 +314,7 @@ ok "Firewall installed and configured and enabled"
 # ==============================================================================
 info "Installing and configuring Fail2Ban..."
 
-apt-get update -y
+apt-get update -y || die "APT update failed"
 apt-get install -y fail2ban apache2-utils || die "Fail2Ban installation failed"
 
 mkdir -p /etc/fail2ban/filter.d
