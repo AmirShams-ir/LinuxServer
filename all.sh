@@ -36,7 +36,7 @@ mkdir -p "$(dirname "$LOG")"; : > "$LOG"
 exec > >(tee -a "$LOG") 2> >(tee -a "$LOG" >&2)
 
 info "═══════════════════════════════════════════"
-info "✔ CloudPanel Enterprise Installer v4"
+info "✔ CloudPanel Script Install And Optimize"
 info "═══════════════════════════════════════════"
 
 # ========================= Self-Healing =========================
