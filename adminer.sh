@@ -2,7 +2,7 @@
 
 echo "CloudPanel Adminer Installer"
 
-read -p "Enter Domain (example: db.pishtaweb.ir): " SITE
+read -p "Enter Domain (example: db.example.com): " SITE
 
 # Auto detect CloudPanel webroot
 WEBROOT=$(find /home -type d -path "*/htdocs/$SITE" 2>/dev/null | head -n 1)
