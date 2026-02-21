@@ -95,6 +95,7 @@ for p in 80 443 8443 3306; do
     die "Clean VPS required"
   fi
 done
+
 ok "Ports are free"
 
 # ========================= Swap Adaptive =========================
@@ -107,6 +108,8 @@ if ! swapon --show | grep -q swap; then
   swapon /swapfile
   echo "/swapfile none swap sw 0 0" >> /etc/fstab
 fi
+
+ok "ُSwap installed"
 
 # ========================= Install CloudPanel =========================
 info "Installing CloudPanel..."
@@ -154,30 +157,65 @@ if [[ -d /proc/sys/net/netfilter ]]; then
 fi
 
 sysctl --system >/dev/null
+
 ok "Kernel tuned"
+
+# ================= Disable Varnish =========================
+systemctl disable varnish 2>/dev/null || true
+systemctl stop varnish 2>/dev/null || true
+ok "Varnish disabled"
+
+# ================= Redis Optimize =======================+==
+if [ -f /etc/redis/redis.conf ]; then
+  sed -i "s/^# maxmemory .*/maxmemory 128mb/" /etc/redis/redis.conf || true
+  echo "maxmemory-policy allkeys-lru" >> /etc/redis/redis.conf
+  systemctl restart redis || true
+fi
+
+ok "Redis optimized"
 
 # ========================= MariaDB Adaptive =========================
 RAM_MB=$(free -m | awk '/Mem:/ {print $2}')
 BP=$((RAM_MB/4))
 [[ $BP -lt 256 ]] && BP=256
-cat > /etc/mysql/mariadb.conf.d/99-enterprise.cnf <<EOF
+cat > /etc/mysql/mariadb.conf.d/99-ultra.cnf <<EOF
 [mysqld]
-innodb_buffer_pool_size=${BP}M
+innodb_buffer_pool_size=256M
 innodb_log_file_size=64M
-max_connections=30
+max_connections=20
 tmp_table_size=32M
 max_heap_table_size=32M
+query_cache_type=0
+query_cache_size=0
 EOF
-systemctl restart mariadb || true
-ok "MariaDB tuned (${BP}M)"
+
+systemctl restart mariadb
+
+ok "MariaDB optimized"
 
 # ========================= PHP-FPM Adaptive =========================
 for DIR in /etc/php/*/fpm/pool.d; do
   [ -d "$DIR" ] || continue
-  sed -i "s/^pm.max_children.*/pm.max_children = 4/" $DIR/*.conf || true
+  for FILE in $DIR/*.conf; do
+    sed -i "s/^pm = .*/pm = ondemand/" "$FILE" || true
+    sed -i "s/^pm.max_children.*/pm.max_children = 2/" "$FILE" || true
+    sed -i "s/^pm.process_idle_timeout.*/pm.process_idle_timeout = 10s/" "$FILE" || true
+    sed -i "s/^pm.max_requests.*/pm.max_requests = 300/" "$FILE" || true
+  done
 done
 systemctl restart php*-fpm 2>/dev/null || true
-ok "PHP-FPM tuned"
+
+ok "PHP-FPM ultra optimized"
+
+# ================= OPcache Tune =================
+for INI in /etc/php/*/fpm/php.ini; do
+  sed -i "s/^memory_limit = .*/memory_limit = 256M/" "$INI" || true
+  sed -i "s/^max_execution_time = .*/max_execution_time = 60/" "$INI" || true
+  sed -i "s/^max_input_vars = .*/max_input_vars = 5000/" "$INI" || true
+done
+systemctl restart php*-fpm 2>/dev/null || true
+
+ok "PHP limits tuned"
 
 # ========================= Firewall =========================
 ufw --force reset
