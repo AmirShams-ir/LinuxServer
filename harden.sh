@@ -89,33 +89,14 @@ for v in 7.1 7.2 7.3 7.4 8.0 8.1 8.2; do
     systemctl disable php$v-fpm 2>/dev/null || true
 done
 
-echo "Purging PHP packages..."
-
-apt purge -y \
-php7.1* php7.2* php7.3* php7.4* \
-php8.0* php8.1* php8.2*
-
-apt autoremove -y
-apt autoclean -y
-
-info "Cleaning leftover config directories..."
-
-rm -rf /etc/php/7.1 \
-       /etc/php/7.2 \
-       /etc/php/7.3 \
-       /etc/php/7.4 \
-       /etc/php/8.0 \
-       /etc/php/8.1 \
-       /etc/php/8.2
-
 systemctl daemon-reload
 
 info "Restarting services..."
-
 systemctl restart php8.3-fpm
 systemctl restart nginx
+systemctl restart mariadb
 
-ok "Done. Remaining PHP services:"
+ok "Old PHP Stop Done. Remaining PHP services:"
 systemctl list-units --type=service | grep php
 
 # ================= Disable Varnish =========================
