@@ -54,7 +54,7 @@ apt update -y && apt upgrade -y && apt autoremove -y && apt autoclean -y && rebo
 # 🔧 Step 2 — Install Required Tools (After Reboot)
 
 ```bash
-apt install -y sudo curl wget
+apt install -y sudo bash curl wget
 ```
 
 ---
@@ -78,6 +78,8 @@ bash -c "$(curl -Lfo- https://raw.githubusercontent.com/AmirShams-ir/LinuxServer
 bash -c "$(curl -Lfo- https://raw.githubusercontent.com/AmirShams-ir/LinuxServer/refs/heads/main/cloudpanel.sh)"
 bash -c "$(curl -Lfo- https://raw.githubusercontent.com/AmirShams-ir/LinuxServer/refs/heads/main/security.sh)"
 bash -c "$(curl -Lfo- https://raw.githubusercontent.com/AmirShams-ir/LinuxServer/refs/heads/main/optimize.sh)"
+bash -c "$(curl -Lfo- https://raw.githubusercontent.com/AmirShams-ir/LinuxServer/refs/heads/main/adminer.sh)"
+bash -c "$(curl -Lfo- https://raw.githubusercontent.com/AmirShams-ir/LinuxServer/refs/heads/main/watchdog.sh)"
 ```
 
 ---
