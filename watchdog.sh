@@ -6,6 +6,8 @@
 # License: See GitHub repository for license details.
 # -----------------------------------------------------------------------------
 
+set -e
+
 # ==============================================================================
 # Root
 # ==============================================================================
@@ -57,67 +59,127 @@ info "════════════════════════�
 # ==============================================================================
 # Smart RAM Watchdog Installer
 # ==============================================================================
-INSTALL_PATH="/usr/local/bin/ram-watchdog"
-LOG_FILE="/var/log/ram-watchdog.log"
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+
+INSTALL_PATH="/usr/local/bin/server-autoheal"
+LOG_FILE="/var/log/server-autoheal.log"
+STATE_FILE="/var/run/server-autoheal.state"
 CRON_SCHEDULE="*/5 * * * *"
-RAM_THRESHOLD=90
-SWAP_THRESHOLD=30
+
+RAM_WARN=80
+RAM_CRIT=90
+SWAP_WARN=20
+SWAP_CRIT=40
+COOLDOWN=600   # 10 minutes
+
+info(){ echo -e "\e[34m$1\e[0m"; }
+ok(){ echo -e "\e[32m[✔] $1\e[0m"; }
+
+detect_php_service() {
+    systemctl list-units --type=service --no-legend | \
+    awk '{print $1}' | grep -E 'php.*fpm' | head -n1
+}
+
+PHP_SERVICE=$(detect_php_service)
+NGINX_SERVICE="nginx"
+DB_SERVICE="mariadb"
+
+[ -z "$PHP_SERVICE" ] && PHP_SERVICE="php8.3-fpm"
 
 # ==============================================================================
 # Create main watchdog script
 # ==============================================================================
-cat > $INSTALL_PATH <<'EOF'
-#!/usr/bin/env bash
+info "Installing Enterprise Auto-Heal..."
 
-LOG="/var/log/ram-watchdog.log"
-RAM_THRESHOLD=85
-SWAP_THRESHOLD=25
+cat > $INSTALL_PATH <<EOF
+#!/usr/bin/env bash
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+
+LOG="$LOG_FILE"
+STATE="$STATE_FILE"
+
+RAM_WARN=$RAM_WARN
+RAM_CRIT=$RAM_CRIT
+SWAP_WARN=$SWAP_WARN
+SWAP_CRIT=$SWAP_CRIT
+COOLDOWN=$COOLDOWN
+
+PHP_SERVICE="$PHP_SERVICE"
+NGINX_SERVICE="$NGINX_SERVICE"
+DB_SERVICE="$DB_SERVICE"
 
 log() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> $LOG
+    echo "\$(date '+%Y-%m-%d %H:%M:%S') | \$1" >> \$LOG
 }
 
-RAM_USED=$(free | awk '/Mem:/ {printf("%.0f"), $3/$2 * 100}')
-SWAP_USED=$(free | awk '/Swap:/ {if ($2==0) print 0; else printf("%.0f"), $3/$2 * 100}')
+cooldown_active() {
+    [ -f "\$STATE" ] || return 1
+    LAST=\$(cat \$STATE)
+    NOW=\$(date +%s)
+    DIFF=\$((NOW - LAST))
+    [ "\$DIFF" -lt "\$COOLDOWN" ]
+}
 
-log "RAM: ${RAM_USED}% | SWAP: ${SWAP_USED}%"
+touch \$LOG
 
-if [ "$RAM_USED" -ge "$RAM_THRESHOLD" ] || [ "$SWAP_USED" -ge "$SWAP_THRESHOLD" ]; then
+RAM_USED=\$(free | awk '/Mem:/ {printf("%.0f"), \$3/\$2 * 100}')
+SWAP_USED=\$(free | awk '/Swap:/ {if (\$2==0) print 0; else printf("%.0f"), \$3/\$2 * 100}')
 
-    log "High memory detected. Dropping cache..."
+log "RAM=\${RAM_USED}% SWAP=\${SWAP_USED}%"
+
+if cooldown_active; then
+    log "Cooldown active. Skipping actions."
+    exit 0
+fi
+
+# Warning
+if [ "\$RAM_USED" -ge "\$RAM_WARN" ] || [ "\$SWAP_USED" -ge "\$SWAP_WARN" ]; then
+    log "Warning threshold reached. Dropping caches."
     sync
-    echo 1 > /proc/sys/vm/drop_caches
+    echo 3 > /proc/sys/vm/drop_caches
     sleep 3
+fi
 
-    RAM_AFTER=$(free | awk '/Mem:/ {printf("%.0f"), $3/$2 * 100}')
-    SWAP_AFTER=$(free | awk '/Swap:/ {if ($2==0) print 0; else printf("%.0f"), $3/$2 * 100}')
+RAM_USED=\$(free | awk '/Mem:/ {printf("%.0f"), \$3/\$2 * 100}')
+SWAP_USED=\$(free | awk '/Swap:/ {if (\$2==0) print 0; else printf("%.0f"), \$3/\$2 * 100}')
 
-    log "After cache drop → RAM: ${RAM_AFTER}% | SWAP: ${SWAP_AFTER}%"
+# Critical
+if [ "\$RAM_USED" -ge "\$RAM_CRIT" ] || [ "\$SWAP_USED" -ge "\$SWAP_CRIT" ]; then
 
-    if [ "$RAM_AFTER" -ge "$RAM_THRESHOLD" ] || [ "$SWAP_AFTER" -ge "$SWAP_THRESHOLD" ]; then
+    log "Critical memory detected."
 
-        # Find heaviest php-fpm process
-        PID=$(ps -eo pid,comm,%mem --sort=-%mem | \
-              grep php-fpm | head -n 1 | awk '{print $1}')
+    systemctl reload \$PHP_SERVICE 2>/dev/null || true
+    sleep 5
 
-        if [ ! -z "$PID" ]; then
-            log "Gracefully killing PHP-FPM PID $PID"
-            kill $PID
-            sleep 5
+    RAM_AFTER=\$(free | awk '/Mem:/ {printf("%.0f"), \$3/\$2 * 100}')
 
-            if ps -p $PID > /dev/null 2>&1; then
-                log "Force killing PHP-FPM PID $PID"
-                kill -9 $PID
-            fi
-        else
-            log "No PHP-FPM process found."
-        fi
+    if [ "\$RAM_AFTER" -ge "\$RAM_CRIT" ]; then
+        log "Restarting PHP-FPM."
+        systemctl restart \$PHP_SERVICE
+        sleep 8
     fi
+
+    RAM_AFTER=\$(free | awk '/Mem:/ {printf("%.0f"), \$3/\$2 * 100}')
+
+    if [ "\$RAM_AFTER" -ge "\$RAM_CRIT" ]; then
+        log "Restarting Nginx."
+        systemctl restart \$NGINX_SERVICE
+        sleep 5
+    fi
+
+    RAM_AFTER=\$(free | awk '/Mem:/ {printf("%.0f"), \$3/\$2 * 100}')
+
+    if [ "\$RAM_AFTER" -ge 95 ]; then
+        log "Extreme condition. Restarting MariaDB."
+        systemctl restart \$DB_SERVICE
+    fi
+
+    date +%s > \$STATE
 fi
 EOF
 
 chmod +x $INSTALL_PATH
-ok "RAM Watchdog Created"
+ok "Auto-Heal binary installed."
 
 # ==============================================================================
 # Setup cron safely
