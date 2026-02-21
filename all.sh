@@ -167,7 +167,8 @@ ok "Varnish disabled"
 
 # ================= Redis Optimize =======================+==
 if [ -f /etc/redis/redis.conf ]; then
-  sed -i "s/^# maxmemory .*/maxmemory 128mb/" /etc/redis/redis.conf || true
+  sed -i "s/^maxmemory .*/maxmemory 128mb/" /etc/redis/redis.conf || true
+  grep -q "^maxmemory " /etc/redis/redis.conf || echo "maxmemory 128mb" >> /etc/redis/redis.conf
   echo "maxmemory-policy allkeys-lru" >> /etc/redis/redis.conf
   systemctl restart redis || true
 fi
@@ -180,7 +181,7 @@ BP=$((RAM_MB/4))
 [[ $BP -lt 256 ]] && BP=256
 cat > /etc/mysql/mariadb.conf.d/99-ultra.cnf <<EOF
 [mysqld]
-innodb_buffer_pool_size=256M
+innodb_buffer_pool_size=${BP}M
 innodb_log_file_size=64M
 max_connections=20
 tmp_table_size=32M
@@ -212,6 +213,9 @@ for INI in /etc/php/*/fpm/php.ini; do
   sed -i "s/^memory_limit = .*/memory_limit = 256M/" "$INI" || true
   sed -i "s/^max_execution_time = .*/max_execution_time = 60/" "$INI" || true
   sed -i "s/^max_input_vars = .*/max_input_vars = 5000/" "$INI" || true
+  sed -i "s/^opcache.memory_consumption=.*/opcache.memory_consumption=128/" "$INI" || true
+  sed -i "s/^opcache.interned_strings_buffer=.*/opcache.interned_strings_buffer=16/" "$INI" || true
+  sed -i "s/^opcache.max_accelerated_files=.*/opcache.max_accelerated_files=10000/" "$INI" || true
 done
 systemctl restart php*-fpm 2>/dev/null || true
 
