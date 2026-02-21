@@ -120,12 +120,14 @@ fi
 EOF
 
 chmod +x $INSTALL_PATH
+ok "RAM Watchdog Created"
 
 # ==============================================================================
 # Setup cron safely
 # ==============================================================================
 ( crontab -l 2>/dev/null | grep -v "$INSTALL_PATH" ; \
   echo "$CRON_SCHEDULE $INSTALL_PATH" ) | crontab -
+ok "Corn Job Created"
 
 # ==============================================================================
 # Final
@@ -135,5 +137,3 @@ ok "Installed at: $INSTALL_PATH"
 ok "Log file: $LOG_FILE"
 ok "Cron: every 5 minutes"
 info "═══════════════════════════════════════════"
-
-unset INSTALL_PATH LOG_FILE
