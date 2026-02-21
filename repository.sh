@@ -125,7 +125,7 @@ EOF
   mkdir -p /etc/apt/preferences.d
   cat > "$PIN_FILE" <<EOF
 Package: *
-Pin: origin edge02.10.ir.cdn.ir
+Pin: origin mirror.cdn.ir
 Pin-Priority: 900
 
 Package: *
