@@ -1,25 +1,49 @@
-# ================ Install Adminer ===================
-SITE="db.pishtaweb.ir"
-WEBROOT="/home/cloudpanel/htdocs/$SITE"
+#!/usr/bin/env bash
 
-cd $WEBROOT || exit
+echo "CloudPanel Adminer Installer"
 
-wget https://www.adminer.org/latest.php -O index.php
-chown -R cloudpanel:cloudpanel $WEBROOT
+read -p "Enter Domain (example: db.pishtaweb.ir): " SITE
+
+# Auto detect CloudPanel webroot
+WEBROOT=$(find /home -type d -path "*/htdocs/$SITE" 2>/dev/null | head -n 1)
+
+if [ -z "$WEBROOT" ]; then
+    echo "Domain not found inside CloudPanel structure."
+    exit 1
+fi
+
+# If public folder exists use it
+if [ -d "$WEBROOT/public" ]; then
+    WEBROOT="$WEBROOT/public"
+fi
+
+echo "Detected Webroot: $WEBROOT"
+
+cd "$WEBROOT" || exit 1
+
+# Download Adminer
+wget -q https://www.adminer.org/latest.php -O index.php
+
+# Secure permissions
+chown -R $(stat -c '%U:%G' "$WEBROOT") "$WEBROOT"
 chmod 640 index.php
 
+# Create login
 read -p "Username: " USERNAME
 read -s -p "Password: " PASSWORD
 echo
-HASH=$(openssl passwd -apr1 $PASSWORD)
+HASH=$(openssl passwd -apr1 "$PASSWORD")
+echo "$USERNAME:$HASH" > "$WEBROOT/.htpasswd"
 
-echo "$USERNAME:$HASH" > $WEBROOT/.htpasswd
-
-cat > $WEBROOT/.htaccess <<EOF
+# Enable Basic Auth
+cat > "$WEBROOT/.htaccess" <<EOF
 AuthType Basic
 AuthName "Database Login"
 AuthUserFile $WEBROOT/.htpasswd
 Require valid-user
 EOF
 
-echo "Adminer ready: https://$SITE"
+echo "--------------------------------------"
+echo "Adminer Installed Successfully"
+echo "Access: https://$SITE"
+echo "--------------------------------------"
