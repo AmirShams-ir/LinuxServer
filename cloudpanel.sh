@@ -109,7 +109,7 @@ if ! swapon --show | grep -q swap; then
   echo "/swapfile none swap sw 0 0" >> /etc/fstab
 fi
 
-ok "ُSwap installed"
+ok "Swap installed"
 
 # ========================= Install CloudPanel =========================
 info "Installing CloudPanel..."
@@ -122,10 +122,10 @@ rm install.sh
 
 # ========================= Final =========================
 IP=$(hostname -I | awk '{print $1}')
-
 info "═══════════════════════════════════════════"
 ok  "CloudPanel Enterprise Ready"
 ok  "Access: https://$IP:8443"
 ok  "FQDN  : $FQDN"
 info "Reboot recommended"
 info "═══════════════════════════════════════════"
+unset IP FQDN DB_ENGINE
