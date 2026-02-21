@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # -----------------------------------------------------------------------------
-# CloudPanel Enterprise Installer (Stable • Self-Healing • Production)
+# CloudPanel CloudPanel Harden And Optimizer
 # Supports: Debian 12/13, Ubuntu 22.04/24.04
 # Author: Amir Shams
 # GitHub: https://github.com/AmirShams-ir/LinuxServer
@@ -36,7 +36,7 @@ mkdir -p "$(dirname "$LOG")"; : > "$LOG"
 exec > >(tee -a "$LOG") 2> >(tee -a "$LOG" >&2)
 
 info "═══════════════════════════════════════════"
-info "✔ CloudPanel Harden And Optimize"
+info "✔ CloudPanel Harden And Optimizer"
 info "═══════════════════════════════════════════"
 
 # ========================= Kernel Tuning =========================
