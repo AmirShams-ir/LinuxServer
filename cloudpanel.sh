@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # -----------------------------------------------------------------------------
-# Description: Install Cloud Panel a fresh Debian/Ubuntu VPS.
+# CloudPanel Enterprise Installer (Stable • Self-Healing • Production)
+# Supports: Debian 12/13, Ubuntu 22.04/24.04
 # Author: Amir Shams
 # GitHub: https://github.com/AmirShams-ir/LinuxServer
 # License: See GitHub repository for license details.
@@ -9,232 +10,122 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-# ==============================================================================
-# Root Handling
-# ==============================================================================
-if [[ "${EUID}" -ne 0 ]]; then
-  if command -v sudo >/dev/null 2>&1; then
-    exec sudo --preserve-env=PATH bash "$0" "$@"
-  else
-    printf "Root privileges required.\n"
-    exit 1
-  fi
-fi
+# ========================= Root =========================
+if [[ $EUID -ne 0 ]]; then exec sudo -E bash "$0" "$@"; fi
 
-# ==============================================================================
-# OS Validation
-# ==============================================================================
-if [[ -f /etc/os-release ]]; then
-  source /etc/os-release
-else
-  printf "Cannot detect OS.\n"
-  exit 1
-fi
+info(){ printf "\e[34m%s\e[0m\n" "$*"; }
+ok(){   printf "\e[32m[✔] %s\e[0m\n" "$*"; }
+warn(){ printf "\e[33m[!] %s\e[0m\n" "$*"; }
+die(){  printf "\e[31m[✖] %s\e[0m\n" "$*"; exit 1; }
+has_systemd(){ [[ -d /run/systemd/system ]]; }
 
-[[ "${ID}" == "debian" || "${ID}" == "ubuntu" || "${ID_LIKE:-}" == *"debian"* ]] \
-  || { printf "Debian/Ubuntu only.\n"; exit 1; }
+export DEBIAN_FRONTEND=noninteractive
 
-# ==============================================================================
-# Logging
-# ==============================================================================
-LOG="/var/log/server-$(basename "$0" .sh).log"
-mkdir -p "$(dirname "$LOG")"
-: > "$LOG"
+# ========================= OS Validation =========================
+source /etc/os-release || die "Cannot detect OS"
+case "$ID" in
+  debian) [[ "$VERSION_ID" == "12" || "$VERSION_ID" == "13" ]] || die "Unsupported Debian";;
+  ubuntu) [[ "$VERSION_ID" == "22.04" || "$VERSION_ID" == "24.04" ]] || die "Unsupported Ubuntu";;
+  *) die "Unsupported OS";;
+esac
+ok "OS: $PRETTY_NAME"
 
-{
-  printf "============================================================\n"
-  printf " Script: %s\n" "$(basename "$0")"
-  printf " Started at: %s\n" "$(date '+%Y-%m-%d %H:%M:%S')"
-  printf " Hostname: %s\n" "$(hostname)"
-  printf "============================================================\n"
-} >> "$LOG"
-
+# ========================= Logging =========================
+LOG="/var/log/cloudpanel-enterprise-v4.log"
+mkdir -p "$(dirname "$LOG")"; : > "$LOG"
 exec > >(tee -a "$LOG") 2> >(tee -a "$LOG" >&2)
 
-# ==============================================================================
-# Helpers
-# ==============================================================================
-info() { printf "\e[34m%s\e[0m\n" "$*"; }
-rept() { printf "\e[32m[✔] %s\e[0m\n" "$*"; }
-warn() { printf "\e[33m[!] %s\e[0m\n" "$*"; }
-die()  { printf "\e[31m[✖] %s\e[0m\n" "$*"; exit 1; }
-
-has_systemd() {
-  [[ -d /run/systemd/system ]] && command -v systemctl >/dev/null 2>&1
-}
-
-# ==============================================================================
-# Banner
-# ==============================================================================
 info "═══════════════════════════════════════════"
-info "✔ Cloud Panel Script Started"
+info "✔ CloudPanel Script Install And Optimize"
 info "═══════════════════════════════════════════"
 
-# ==============================================================================
-# Install CloudPanel
-# ==============================================================================
-install_cloudpanel() {
+# ========================= Self-Healing =========================
+if dpkg --audit | grep -q .; then
+  warn "Broken dpkg detected. Repairing..."
+  apt install -f -y || true
+  dpkg --configure -a || true
+fi
 
-  if systemctl list-units --full -all | grep -q clp-agent; then
-    warn "CloudPanel already installed. Skipping."
-    return
+# ========================= Time & NTP =========================
+if has_systemd; then
+  timedatectl set-timezone UTC || true
+  timedatectl set-ntp true || true
+fi
+
+# ========================= FQDN =========================
+info "Configuring FQDN..."
+read -rp "Enter Subdomain (e.g. vps): " SUB
+read -rp "Enter Domain (example.com): " DOMAIN
+[[ "$SUB" =~ ^[a-zA-Z0-9-]+$ ]] || die "Invalid subdomain"
+[[ "$DOMAIN" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]] || die "Invalid domain"
+
+FQDN="$SUB.$DOMAIN"
+SHORT_HOST="${FQDN%%.*}"
+
+PUBLIC_IP=""
+for s in https://api.ipify.org https://ipv4.icanhazip.com https://ifconfig.me/ip; do
+  PUBLIC_IP=$(curl -4 -s --max-time 5 "$s" 2>/dev/null || true)
+  [[ "$PUBLIC_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] && break
+done
+[[ -z "$PUBLIC_IP" ]] && PUBLIC_IP=$(hostname -I | awk '{print $1}')
+[[ -z "$PUBLIC_IP" ]] && die "Public IP detection failed"
+
+hostnamectl set-hostname "$FQDN" || die "Failed to set hostname"
+grep -q "^127.0.0.1" /etc/hosts || echo "127.0.0.1 localhost" >> /etc/hosts
+grep -v -w "$FQDN" /etc/hosts > /etc/hosts.tmp && mv /etc/hosts.tmp /etc/hosts
+echo "$PUBLIC_IP $FQDN $SHORT_HOST" >> /etc/hosts
+
+# Preseed postfix
+echo "postfix postfix/mailname string $DOMAIN" | debconf-set-selections
+echo "postfix postfix/main_mailer_type string 'Internet Site'" | debconf-set-selections
+
+ok "FQDN set to $FQDN ($PUBLIC_IP)"
+
+# ========================= Base Packages =========================
+apt update -y && apt upgrade -y
+apt -y install curl wget sudo unattended-upgrades default-mysql-client
+
+ok "Base packages installed"
+
+# ========================= Smart Port Check =========================
+for p in 80 443 8443 3306; do
+  if ss -lntp | grep -q ":$p "; then
+    SERVICE=$(ss -lntp | grep ":$p " | awk '{print $NF}')
+    warn "Port $p in use by $SERVICE"
+    die "Clean VPS required"
   fi
+done
 
-  info "Installing CloudPanel..."
-  curl -fsSL https://installer.cloudpanel.io/ce/v2/install.sh -o /tmp/clp.sh \
-    || die "Download failed"
+ok "Ports are free"
 
-  bash /tmp/clp.sh || die "CloudPanel install failed"
-  rm -f /tmp/clp.sh
+# ========================= Swap Adaptive =========================
+if ! swapon --show | grep -q swap; then
+  RAM=$(free -m | awk '/Mem:/ {print $2}')
+  SIZE="2G"; [[ "$RAM" -gt 2048 ]] && SIZE="1G"
+  fallocate -l $SIZE /swapfile
+  chmod 600 /swapfile
+  mkswap /swapfile
+  swapon /swapfile
+  echo "/swapfile none swap sw 0 0" >> /etc/fstab
+fi
 
-  sleep 5
+ok "ُSwap installed"
 
-  systemctl is-active --quiet clp-agent \
-    && info "CloudPanel service running" \
-    || die "CloudPanel service failed"
-}
+# ========================= Install CloudPanel =========================
+info "Installing CloudPanel..."
+curl -sS https://installer.cloudpanel.io/ce/v2/install.sh -o install.sh; \
+echo "19cfa702e7936a79e47812ff57d9859175ea902c62a68b2c15ccd1ebaf36caeb install.sh" | \
+sha256sum -c && DB_ENGINE=MARIADB_10.11 bash install.sh
 
-# ==============================================================================
-# Optimize MariaDB for 1GB
-# ==============================================================================
-optimize_mariadb_1gb() {
+ok "CloudPanel installed"
+rm install.sh
 
-  info "Optimizing MariaDB for 1GB..."
+# ========================= Final =========================
+IP=$(hostname -I | awk '{print $1}')
 
-  CONF="/etc/mysql/mariadb.conf.d/99-1gb.cnf"
-
-  cat > "$CONF" <<EOF
-[mysqld]
-innodb_buffer_pool_size=256M
-innodb_log_file_size=64M
-innodb_flush_method=O_DIRECT
-max_connections=30
-tmp_table_size=32M
-max_heap_table_size=32M
-thread_cache_size=8
-table_open_cache=400
-query_cache_type=0
-query_cache_size=0
-EOF
-
-  systemctl restart mariadb
-  info "MariaDB optimized."
-}
-
-# ==============================================================================
-# Optimize PHP-FPM for 1GB
-# ==============================================================================
-optimize_phpfpm_1gb() {
-
-  info "Optimizing PHP-FPM pools..."
-
-  for ver in 8.1 8.2; do
-    POOL_DIR="/etc/php/$ver/fpm/pool.d"
-    [[ -d "$POOL_DIR" ]] || continue
-
-    for pool in "$POOL_DIR"/*.conf; do
-      sed -i "s/^pm.max_children.*/pm.max_children = 4/" "$pool" || true
-      sed -i "s/^pm.start_servers.*/pm.start_servers = 2/" "$pool" || true
-      sed -i "s/^pm.min_spare_servers.*/pm.min_spare_servers = 1/" "$pool" || true
-      sed -i "s/^pm.max_spare_servers.*/pm.max_spare_servers = 2/" "$pool" || true
-      sed -i "s/^pm.max_requests.*/pm.max_requests = 300/" "$pool" || true
-    done
-
-    systemctl restart php$ver-fpm
-  done
-
-  info "PHP-FPM optimized."
-}
-
-# ==============================================================================
-# Enable & Optimize OPcache
-# ==============================================================================
-optimize_opcache() {
-
-  info "Configuring OPcache..."
-
-  for ver in 8.1 8.2; do
-    OPCACHE_FILE="/etc/php/$ver/fpm/conf.d/99-opcache.ini"
-    [[ -d "/etc/php/$ver" ]] || continue
-
-    cat > "$OPCACHE_FILE" <<EOF
-opcache.enable=1
-opcache.memory_consumption=64
-opcache.interned_strings_buffer=8
-opcache.max_accelerated_files=10000
-opcache.validate_timestamps=1
-opcache.revalidate_freq=60
-opcache.save_comments=1
-EOF
-
-    systemctl restart php$ver-fpm
-  done
-
-  info "OPcache configured."
-}
-
-# ==============================================================================
-# Disable Redis (if exists)
-# ==============================================================================
-disable_redis() {
-
-  if systemctl list-unit-files | grep -q redis; then
-    warn "Disabling Redis (not required for this setup)..."
-    systemctl stop redis-server || true
-    systemctl disable redis-server || true
-  fi
-}
-
-# ==============================================================================
-# Execute
-# ==============================================================================
-install_cloudpanel
-optimize_mariadb_1gb
-optimize_phpfpm_1gb
-optimize_opcache
-disable_redis
-final_message
-
-# ==============================================================================
-# Cleanup
-# ==============================================================================
-
-cleanup() {
-
-  info "Running cleanup tasks..."
-
-  # Remove temporary installer files
-  rm -f /tmp/clp.sh 2>/dev/null || true
-
-  # Clear apt cache safely
-  apt autoremove -y >/dev/null 2>&1 || true
-  apt autoclean -y >/dev/null 2>&1 || true
-
-  # Clear journal logs older than 7 days (prevent log bloat on 1GB VPS)
-  journalctl --vacuum-time=7d >/dev/null 2>&1 || true
-
-  # Clear temporary directories
-  rm -rf /tmp/* /var/tmp/* 2>/dev/null || true
-
-  # Reload systemd daemon (safe refresh)
-  systemctl daemon-reload || true
-
-  info "Cleanup completed."
-}
-
-# ==============================================================================
-# Final Info
-# ==============================================================================
-final_message() {
-
-  IP=$(hostname -I | awk '{print $1}')
-
-  info "====================================================="
-  info " CloudPanel Installed & Optimized for 1GB VPS"
-  info " Access: https://$IP:8443"
-  info " MariaDB tuned"
-  info " PHP-FPM limited"
-  info " OPcache enabled"
-  info " Redis disabled"
-  info "====================================================="
-}
+info "═══════════════════════════════════════════"
+ok  "CloudPanel Enterprise Ready"
+ok  "Access: https://$IP:8443"
+ok  "FQDN  : $FQDN"
+info "Reboot recommended"
+info "═══════════════════════════════════════════"
