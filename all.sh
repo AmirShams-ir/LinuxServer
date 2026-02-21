@@ -169,7 +169,7 @@ tmp_table_size=32M
 max_heap_table_size=32M
 EOF
 systemctl restart mariadb || true
-ok "MariaDB tuned (${BP}M buffer pool)"
+ok "MariaDB tuned (${BP}M)"
 
 # ========================= PHP-FPM Adaptive =========================
 for DIR in /etc/php/*/fpm/pool.d; do
@@ -245,3 +245,5 @@ ok  "Access: https://$IP:8443"
 ok  "FQDN  : $FQDN"
 info "Reboot recommended"
 info "═══════════════════════════════════════════"
+
+rm install.sh
