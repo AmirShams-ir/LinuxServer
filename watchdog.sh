@@ -7,8 +7,8 @@
 INSTALL_PATH="/usr/local/bin/ram-watchdog"
 LOG_FILE="/var/log/ram-watchdog.log"
 CRON_SCHEDULE="*/5 * * * *"
-RAM_THRESHOLD=85
-SWAP_THRESHOLD=25
+RAM_THRESHOLD=90
+SWAP_THRESHOLD=30
 
 echo "Installing Smart RAM Watchdog..."
 
@@ -69,7 +69,7 @@ EOF
 chmod +x $INSTALL_PATH
 
 # ------------------------------
-# Setup cron safely (no duplicate)
+# Setup cron safely
 # ------------------------------
 
 ( crontab -l 2>/dev/null | grep -v "$INSTALL_PATH" ; \
