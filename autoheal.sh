@@ -30,13 +30,9 @@ case "$ID" in
 esac
 ok "OS: $PRETTY_NAME"
 
-# ========================= Logging =========================
-LOG="/var/log/cloudpanel-enterprise-v4.log"
-mkdir -p "$(dirname "$LOG")"; : > "$LOG"
-exec > >(tee -a "$LOG") 2> >(tee -a "$LOG" >&2)
-
+# ========================= Banner =========================
 info "═══════════════════════════════════════════"
-info "✔ CloudPanel Script Install And Optimize"
+info "✔ Auto Heal Script Installation
 info "═══════════════════════════════════════════"
 
 # ========================= AutoHeal =========================
@@ -51,11 +47,6 @@ RAM_EMERG=92
 LOAD_WARN=2.0
 LOAD_CRIT=4.0
 COOLDOWN=300
-
-if [[ $EUID -ne 0 ]]; then
-  echo "Run as root"
-  exit 1
-fi
 
 if [[ "$1" == "uninstall" ]]; then
   systemctl stop enterprise-autoheal.timer || true
