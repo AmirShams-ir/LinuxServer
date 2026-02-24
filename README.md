@@ -78,7 +78,7 @@ bash -c "$(curl -Lfo- https://raw.githubusercontent.com/AmirShams-ir/LinuxServer
 bash -c "$(curl -Lfo- https://raw.githubusercontent.com/AmirShams-ir/LinuxServer/refs/heads/main/cloudpanel.sh)"
 bash -c "$(curl -Lfo- https://raw.githubusercontent.com/AmirShams-ir/LinuxServer/refs/heads/main/tweak.sh)"
 bash -c "$(curl -Lfo- https://raw.githubusercontent.com/AmirShams-ir/LinuxServer/refs/heads/main/adminer.sh)"
-bash -c "$(curl -Lfo- https://raw.githubusercontent.com/AmirShams-ir/LinuxServer/refs/heads/main/watchdog.sh)"
+bash -c "$(curl -Lfo- https://raw.githubusercontent.com/AmirShams-ir/LinuxServer/refs/heads/main/autoheal.sh)"
 ```
 
 ---
