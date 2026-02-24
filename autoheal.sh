@@ -30,6 +30,12 @@ info "════════════════════════�
 info "✔ Auto Heal Script Installation"
 info "═══════════════════════════════════════════"
 
+# ========================= Earlyoom =========================
+apt install earlyoom
+systemctl enable earlyoom
+systemctl start earlyoom
+
+# ========================= Varibles =========================
 INSTALL_PATH="/usr/local/bin/enterprise-autoheal"
 SERVICE_PATH="/etc/systemd/system/enterprise-autoheal.service"
 TIMER_PATH="/etc/systemd/system/enterprise-autoheal.timer"
