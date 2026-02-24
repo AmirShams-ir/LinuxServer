@@ -1,41 +1,64 @@
 #!/usr/bin/env bash
 # -----------------------------------------------------------------------------
-# Autoheal Enterprise Installer (Stable • Self-Healing • Production)
-# Supports: Debian 12/13, Ubuntu 22.04/24.04
+# Description: Autoheal for Debian/Ubuntu VPS.
 # Author: Amir Shams
+# GitHub: https://github.com/AmirShams-ir/LinuxServer
+# License: See GitHub repository for license details.
 # -----------------------------------------------------------------------------
 
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-# ========================= Root Checker =========================
-if [[ $EUID -ne 0 ]]; then exec sudo -E bash "$0" "$@"; fi
+# ==============================================================================
+# Root Handling
+# ==============================================================================
+if [[ "${EUID}" -ne 0 ]]; then
+  if command -v sudo >/dev/null 2>&1; then
+    exec sudo --preserve-env=PATH bash "$0" "$@"
+  else
+    printf "Root privileges required.\n"
+    exit 1
+  fi
+fi
 
-# ========================= Helper ===============================
+# ==============================================================================
+# OS Validation
+# ==============================================================================
+if [[ -f /etc/os-release ]]; then
+  source /etc/os-release
+else
+  printf "Cannot detect OS.\n"
+  exit 1
+fi
+
+[[ "${ID}" == "debian" || "${ID}" == "ubuntu" || "${ID_LIKE:-}" == *"debian"* ]] \
+  || { printf "Debian/Ubuntu only.\n"; exit 1; }
+
+# ==============================================================================
+# Helpers
+# ==============================================================================
 info(){ printf "\e[34m%s\e[0m\n" "$*"; }
 ok(){   printf "\e[32m[✔] %s\e[0m\n" "$*"; }
 warn(){ printf "\e[33m[!] %s\e[0m\n" "$*"; }
 die(){  printf "\e[31m[✖] %s\e[0m\n" "$*"; exit 1; }
 
-# ========================= OS Validation =========================
-source /etc/os-release || die "Cannot detect OS"
-case "$ID" in
-  debian) [[ "$VERSION_ID" == "12" || "$VERSION_ID" == "13" ]] || die "Unsupported Debian";;
-  ubuntu) [[ "$VERSION_ID" == "22.04" || "$VERSION_ID" == "24.04" ]] || die "Unsupported Ubuntu";;
-  *) die "Unsupported OS";;
-esac
-ok "OS: $PRETTY_NAME"
-
+# ==============================================================================
+# Banner
+# ==============================================================================
 info "═══════════════════════════════════════════"
 info "✔ Auto Heal Script Installation"
 info "═══════════════════════════════════════════"
 
-# ========================= Earlyoom =========================
+# ==============================================================================
+# Install Earlyoom
+# ==============================================================================
 apt install earlyoom
 systemctl enable earlyoom
 systemctl start earlyoom
 
-# ================= Variables =================================
+# ==============================================================================
+# Variables
+# ==============================================================================
 INSTALL_PATH="/usr/local/bin/enterprise-autoheal"
 SERVICE_PATH="/etc/systemd/system/enterprise-autoheal.service"
 TIMER_PATH="/etc/systemd/system/enterprise-autoheal.timer"
@@ -53,11 +76,15 @@ LOAD_CRIT=4.0
 
 COOLDOWN=300
 
-# ================= Dependencies =================
+# ==============================================================================
+# Dependency
+# ==============================================================================
 apt update -y >/dev/null 2>&1 || true
 apt install -y bc >/dev/null 2>&1 || true
 
-# ================= Core Binary =================
+# ==============================================================================
+# Install Autoheal
+# ==============================================================================
 cat > "$INSTALL_PATH" <<EOF
 #!/usr/bin/env bash
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
@@ -173,7 +200,9 @@ EOF
 
 chmod +x "$INSTALL_PATH"
 
-# ================= Service =================
+# ==============================================================================
+# Service
+# ==============================================================================
 cat > "$SERVICE_PATH" <<EOF
 [Unit]
 Description=Enterprise AutoHeal++
@@ -186,7 +215,9 @@ IOSchedulingClass=best-effort
 IOSchedulingPriority=7
 EOF
 
-# ================= Timer =================
+# ==============================================================================
+# Timer
+# ==============================================================================
 cat > "$TIMER_PATH" <<EOF
 [Unit]
 Description=Run Enterprise AutoHeal every 2 minutes
@@ -206,8 +237,11 @@ systemctl start enterprise-autoheal.timer
 
 touch "$LOG_FILE"
 
+# ==============================================================================
+# Final
+# ==============================================================================
 info "═══════════════════════════════════════════"
-ok "Enterprise AutoHeal++ Installed Successfully"
+ok "Enterprise AutoHeal Installed Successfully"
 ok "Log: $LOG_FILE"
-ok "Status: systemctl status enterprise-autoheal.timer"
+ok "Installed at: $INSTALL_PATH"
 info "═══════════════════════════════════════════"
