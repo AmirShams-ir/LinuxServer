@@ -35,7 +35,7 @@ apt install earlyoom
 systemctl enable earlyoom
 systemctl start earlyoom
 
-# ========================= Varibles =========================
+# ================= Variables =================================
 INSTALL_PATH="/usr/local/bin/enterprise-autoheal"
 SERVICE_PATH="/etc/systemd/system/enterprise-autoheal.service"
 TIMER_PATH="/etc/systemd/system/enterprise-autoheal.timer"
@@ -44,25 +44,20 @@ LOG_FILE="/var/log/enterprise-autoheal.log"
 RAM_WARN=75
 RAM_CRIT=85
 RAM_EMERG=92
+
+SWAP_WARN=30
+SWAP_CRIT=50
+
 LOAD_WARN=2.0
 LOAD_CRIT=4.0
+
 COOLDOWN=300
 
-# ========================= Uninstall =========================
-if [[ "${1:-}" == "uninstall" ]]; then
-  systemctl stop enterprise-autoheal.timer || true
-  systemctl disable enterprise-autoheal.timer || true
-  rm -f "$SERVICE_PATH" "$TIMER_PATH" "$INSTALL_PATH"
-  systemctl daemon-reload
-  ok "Enterprise Auto-Heal Removed"
-  exit 0
-fi
-
-info "Installing dependencies..."
+# ================= Dependencies =================
 apt update -y >/dev/null 2>&1 || true
-apt install -y bc curl >/dev/null 2>&1 || true
+apt install -y bc >/dev/null 2>&1 || true
 
-# ========================= Core Binary =========================
+# ================= Core Binary =================
 cat > "$INSTALL_PATH" <<EOF
 #!/usr/bin/env bash
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
@@ -73,6 +68,8 @@ STATE="/var/run/enterprise-autoheal.state"
 RAM_WARN=$RAM_WARN
 RAM_CRIT=$RAM_CRIT
 RAM_EMERG=$RAM_EMERG
+SWAP_WARN=$SWAP_WARN
+SWAP_CRIT=$SWAP_CRIT
 LOAD_WARN=$LOAD_WARN
 LOAD_CRIT=$LOAD_CRIT
 COOLDOWN=$COOLDOWN
@@ -94,6 +91,7 @@ load_avg(){ awk '{print \$1}' /proc/loadavg; }
 top_memory_pid(){ ps -eo pid,%mem --sort=-%mem | awk 'NR==2 {print \$1}'; }
 
 PHP_SERVICE=\$(systemctl list-units --type=service --no-legend | awk '{print \$1}' | grep -E 'php.*fpm' | head -n1)
+DB_SERVICE="mariadb"
 
 touch "\$LOG"
 
@@ -108,18 +106,18 @@ if cooldown; then
   exit 0
 fi
 
-# ---------------- Warning Stage ----------------
-if (( RAM >= RAM_WARN )) || (( \$(echo "\$LOAD > \$LOAD_WARN" | bc -l) )); then
+# ================= Warning =================
+if (( RAM >= RAM_WARN )) || (( SWAP >= SWAP_WARN )) || (( \$(echo "\$LOAD > \$LOAD_WARN" | bc -l) )); then
   log "Warning: Dropping caches"
   sync
   sysctl -w vm.drop_caches=3 >/dev/null 2>&1 || true
 fi
 
 RAM=\$(ram_usage)
-LOAD=\$(load_avg)
+SWAP=\$(swap_usage)
 
-# ---------------- Critical Stage ----------------
-if (( RAM >= RAM_CRIT )) || (( \$(echo "\$LOAD > \$LOAD_CRIT" | bc -l) )); then
+# ================= Critical =================
+if (( RAM >= RAM_CRIT )) || (( SWAP >= SWAP_CRIT )) || (( \$(echo "\$LOAD > \$LOAD_CRIT" | bc -l) )); then
   log "Critical: Restarting PHP-FPM"
   if [[ -n "\$PHP_SERVICE" ]]; then
     systemctl restart "\$PHP_SERVICE" 2>/dev/null || true
@@ -128,8 +126,30 @@ if (( RAM >= RAM_CRIT )) || (( \$(echo "\$LOAD > \$LOAD_CRIT" | bc -l) )); then
 fi
 
 RAM=\$(ram_usage)
+SWAP=\$(swap_usage)
 
-# ---------------- Emergency Stage ----------------
+# ================= MariaDB Graceful Protection =================
+if (( RAM >= RAM_CRIT )) && (( SWAP >= SWAP_WARN )); then
+  log "High RAM + Swap detected: Flushing MariaDB"
+
+  # Try graceful flush
+  mysqladmin flush-tables >/dev/null 2>&1 || true
+  mysqladmin flush-logs >/dev/null 2>&1 || true
+
+  sleep 3
+
+  RAM_AFTER=\$(ram_usage)
+
+  if (( RAM_AFTER >= RAM_CRIT )); then
+    log "Restarting MariaDB gracefully"
+    systemctl restart "\$DB_SERVICE" 2>/dev/null || true
+    sleep 8
+  fi
+fi
+
+RAM=\$(ram_usage)
+
+# ================= Emergency Kill =================
 if (( RAM >= RAM_EMERG )); then
   PID=\$(top_memory_pid)
   if [[ -n "\$PID" ]]; then
@@ -141,9 +161,9 @@ fi
 
 RAM=\$(ram_usage)
 
-# ---------------- Absolute Meltdown ----------------
+# ================= Absolute Meltdown =================
 if (( RAM >= 95 )); then
-  log "Extreme meltdown. Rebooting."
+  log "Extreme meltdown. Rebooting system."
   date +%s > "\$STATE"
   systemctl reboot --force
 fi
@@ -153,11 +173,10 @@ EOF
 
 chmod +x "$INSTALL_PATH"
 
-# ========================= Service =========================
+# ================= Service =================
 cat > "$SERVICE_PATH" <<EOF
 [Unit]
-Description=Enterprise Auto-Heal
-After=network.target
+Description=Enterprise AutoHeal++
 
 [Service]
 Type=oneshot
@@ -167,10 +186,10 @@ IOSchedulingClass=best-effort
 IOSchedulingPriority=7
 EOF
 
-# ========================= Timer =========================
+# ================= Timer =================
 cat > "$TIMER_PATH" <<EOF
 [Unit]
-Description=Run Enterprise Auto-Heal every 2 minutes
+Description=Run Enterprise AutoHeal every 2 minutes
 
 [Timer]
 OnBootSec=2min
@@ -188,8 +207,7 @@ systemctl start enterprise-autoheal.timer
 touch "$LOG_FILE"
 
 info "═══════════════════════════════════════════"
-ok "Enterprise Auto-Heal Installed Successfully"
-ok "Binary: $INSTALL_PATH"
+ok "Enterprise AutoHeal++ Installed Successfully"
 ok "Log: $LOG_FILE"
 ok "Status: systemctl status enterprise-autoheal.timer"
 info "═══════════════════════════════════════════"
